@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 
 const PREFIX = 'sky3d-v1-';
-export const VERSION = '24.11 23:00';                 // ставится при выкладке: дата и время сборки                 // имя комнаты на сервере-своднике: префикс + код
+export const VERSION = '24.11 23:13';                 // ставится при выкладке: дата и время сборки                 // имя комнаты на сервере-своднике: префикс + код
 const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const SEND_HZ = 15, REP_HZ = 10;
 const qs = new URLSearchParams(location.search);
@@ -38,7 +38,7 @@ NET.byNid = byNid;
 // ---------- транспорт ----------
 // Ретранслятор (TURN) нужен, когда браузеры не могут соединиться напрямую: строгий роутер, мобильный интернет, VPN.
 // Ключ бесплатного Metered Open Relay: ссылка выдаёт список серверов с временными паролями. Пусто — только прямое соединение
-const TURN_API = '';
+const TURN_API = 'https://skygame-jokkervlad.metered.live/api/v1/turn/credentials?apiKey=c151cda11e800489d9dbcbe60eb4f3e0a65d';   // бесплатный план 500 МБ в месяц
 const STUN = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }];
 let ICE = STUN, iceP = null;
 function loadIce() { if (!TURN_API) return Promise.resolve(); if (!iceP) iceP = fetch(TURN_API).then(r => r.json()).then(list => { if (Array.isArray(list) && list.length) ICE = STUN.concat(list); }).catch(() => { iceP = null; }); return iceP; }
@@ -184,9 +184,12 @@ function spawnInfo(m) { return [m.nid, m.id, r1(m.x), r1(m.z), m.name, r2(m.sc),
 NET.mobRemoved = m => { if (!m.nid) return; byNid.delete(m.nid); if (NET.host && NET.live && m._sp) toAll(['mrm', m.nid]); };
 const ST = ['stun', 'slow', 'mark', 'acid', 'blind', 'weak', 'noheal', 'open', 'shell', 'burn'];
 NET.ST = ST;
-function mobSnap() { const list = []; for (const m of A.mobs) { if (!m.nid || m.gone) continue; if (!m._sp) { m._sp = true; toAll(['mspawn', spawnInfo(m)]); } const st = {}; for (const k of ST) if (m[k] > 0.05) st[k] = r1(m[k]);
+function mobRows() { const rows = []; for (const m of A.mobs) { if (!m.nid || m.gone) continue; if (!m._sp) { m._sp = true; toAll(['mspawn', spawnInfo(m)]); } const st = {}; for (const k of ST) if (m[k] > 0.05) st[k] = Math.round(m[k]);
     const fl = (m.dead ? 1 : 0) | (m.aggro ? 2 : 0) | (m.loot ? 4 : 0) | (m.fade >= 0 && m.dead ? 8 : 0) | (m.mesh.visible ? 16 : 0) | (m.wind > 0 ? 32 : 0) | (m.still ? 64 : 0);
-    list.push([m.nid, r1(m.x), r1(m.z), r2(m.yaw), Math.round(m.hp), fl, st, Math.round(m.max)]); if (m.name !== m._sn) { m._sn = m.name; if (m._snd) toAll(['mn', [m.nid, m.name]]); m._snd = true; } }
+    rows.push({ m, row: [m.nid, Math.round(m.x), Math.round(m.z), r1(m.yaw), Math.round(m.hp), fl, st, Math.round(m.max)] }); if (m.name !== m._sn) { m._sn = m.name; if (m._snd) toAll(['mn', [m.nid, m.name]]); m._snd = true; } }
+  return rows; }
+function mobSnapFor(p, rows) { const g = NET.ghosts.get(p.id), last = p.ms || (p.ms = new Map()), full = seq % 45 === 0, slow = seq % 15 === 0, list = [];
+  for (const { m, row } of rows) { const key = row.slice(1).join(',') + JSON.stringify(row[6]); if (!full && last.get(m.nid) === key) continue; if (!full && !slow && g && !m.dead && Math.hypot(g.x - m.x, g.z - m.z) > 1800) continue; last.set(m.nid, key); list.push(row); }
   return list; }
 NET.fullMobs = id => { for (const m of A.mobs) if (m.nid && !m.gone && m._sp) q(id, ['mspawn', spawnInfo(m)]); };
 
@@ -261,7 +264,7 @@ NET.tick = function (dt) { if (!NET.role) return; updateGhosts(dt);
   if (sendT >= 1 / SEND_HZ) { sendT = 0; seq++;
     if (NET.client) { if (NET.inGame) q('H', ['ps', myState()]); A.clientDiff(); }
     else if (NET.live && NET.inGame) { const all = [myState(), ...[...NET.ghosts.values()].map(g => [r1(g.tx), r1(g.tz), r2(g.tyaw), r1(g.speed), r2(g.bank), g.hp, g.max, g.dead ? 1 : 0, g.dive, g.mirror, g.sh, g.hide, g.nick, g.ship, g.lost, g.id, g.fl])];
-      const team = A.teamInfo(); for (const id of NET.peers.keys()) q(id, ['pl', all.concat([[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', null, 0, '#team', team]])]); toAll(['ms', mobSnap()]); flushPset(); A.hostState(); } }
+      const team = A.teamInfo(); for (const id of NET.peers.keys()) q(id, ['pl', all.concat([[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', null, 0, '#team', team]])]); if (seq % 3 !== 0) { const rows = mobRows(); for (const p of NET.peers.values()) { const l = mobSnapFor(p, rows); if (l.length) q(p.id, ['ms', l]); } } flushPset(); A.hostState(); } }
   if (repT >= 1 / REP_HZ) { repT = 0; if (NET.host && NET.inGame) repTick(); }
   flush(); };
 NET.flush = flush;
