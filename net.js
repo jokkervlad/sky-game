@@ -32,7 +32,14 @@ const byNid = new Map();            // моб по сетевому номеру
 NET.byNid = byNid;
 
 // ---------- транспорт ----------
-function peerOpts() { const o = { debug: qs.get('netdebug') ? 3 : 0, config: { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }, { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' }] } };
+// Ретранслятор (TURN) нужен, когда браузеры не могут соединиться напрямую: строгий роутер, мобильный интернет, VPN.
+// Ключ бесплатного Metered Open Relay: ссылка выдаёт список серверов с временными паролями. Пусто — только прямое соединение
+const TURN_API = '';
+const STUN = [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }, { urls: 'stun:stun.cloudflare.com:3478' }];
+let ICE = STUN, iceP = null;
+function loadIce() { if (!TURN_API) return Promise.resolve(); if (!iceP) iceP = fetch(TURN_API).then(r => r.json()).then(list => { if (Array.isArray(list) && list.length) ICE = STUN.concat(list); }).catch(() => { iceP = null; }); return iceP; }
+NET.relay = () => ICE.some(q => [].concat(q.urls).some(u => u.startsWith('turn')));
+function peerOpts() { const o = { debug: qs.get('netdebug') ? 3 : 0, config: { iceServers: ICE } };
   const p = qs.get('peer'); if (p) { const [host, port] = p.split(':'); Object.assign(o, { host, port: +port || 9000, path: '/', secure: false }); } return o; }
 function makeCode() { let s = ''; for (let i = 0; i < 4; i++) s += ALPHA[(Math.random() * ALPHA.length) | 0]; return s; }
 function q(to, msg) { if (!out.has(to)) out.set(to, []); out.get(to).push(msg); }
@@ -47,17 +54,25 @@ function toAll(msg, except) { if (NET.host) { for (const id of NET.peers.keys())
 NET.send = (to, msg) => q(to, msg);
 
 NET.create = function (cb) { NET.leave(true); const code = makeCode(); NET.status = 'Создаём комнату…'; onStatus();
+  loadIce().then(() => hostOpen(code, cb)); };
+function hostOpen(code, cb) {
   peer = new window.Peer(PREFIX + code, peerOpts());
   peer.on('open', () => { NET.role = 'host'; NET.id = 'H'; NET.code = code; NET.status = ''; lobbyChanged(); cb && cb(null, code); });
   peer.on('connection', conn => { conn.on('open', () => hostAccept(conn)); });
   peer.on('error', e => { if (e.type === 'unavailable-id') { peer.destroy(); return NET.create(cb); } NET.status = netErr(e); onStatus(); if (!NET.role) cb && cb(NET.status); });
-  peer.on('disconnected', () => { if (peer && !peer.destroyed) try { peer.reconnect(); } catch (e) {} }); };
+  peer.on('disconnected', () => { if (peer && !peer.destroyed) try { peer.reconnect(); } catch (e) {} }); }
 NET.join = function (code, cb) { NET.leave(true); code = code.trim().toUpperCase(); if (!/^[A-Z0-9]{4}$/.test(code)) return cb && cb('Код комнаты — 4 буквы или цифры');
   NET.status = 'Подключаемся к комнате ' + code + '…'; onStatus();
+  loadIce().then(() => guestOpen(code, cb)); };
+function guestOpen(code, cb) {
   peer = new window.Peer(undefined, peerOpts());
   peer.on('open', () => { const conn = peer.connect(PREFIX + code, { reliable: true, serialization: 'json' }); let ok = false;
-    const t = setTimeout(() => { if (!ok) { NET.status = 'Комната не отвечает. Проверьте код или попросите ведущего создать её заново'; onStatus(); cb && cb(NET.status); NET.leave(true); } }, 25000);
-    conn.on('open', () => { ok = true; clearTimeout(t); hostConn = conn; NET.role = 'client'; NET.code = code; NET.status = ''; q('H', ['hello', helloInfo()]); flush(); cb && cb(null, code); });
+    // ведущий ответил, но браузеры не пробились друг к другу — это не «нет комнаты», а сеть: говорим, что делать
+    const NOPATH = 'Комната нашлась, но браузеры не смогли соединиться напрямую. Так бывает со строгим роутером, мобильным интернетом или VPN. Выключите VPN у обоих, поменяйтесь ролями (комнату создаёт другой) или подключитесь через другую сеть, например раздачу с телефона';
+    let bad = 0, answered = false; const fail = msg => { if (ok) return; ok = true; clearTimeout(t); clearInterval(w); NET.status = msg; onStatus(); cb && cb(msg); NET.leave(true); };
+    const w = setInterval(() => { const pc = conn.peerConnection; if (!pc) return; if (pc.remoteDescription) answered = true; const st = pc.iceConnectionState; bad = st === 'failed' || st === 'disconnected' ? bad + 1 : 0; if (bad >= 4 && !NET.relay()) fail(NOPATH); else if (bad >= 8) fail(NOPATH); }, 1000);
+    const t = setTimeout(() => fail(answered ? NOPATH : 'Комната не отвечает. Проверьте код или попросите ведущего создать её заново'), 25000);
+    conn.on('open', () => { ok = true; clearTimeout(t); clearInterval(w); hostConn = conn; NET.role = 'client'; NET.code = code; NET.status = ''; q('H', ['hello', helloInfo()]); flush(); cb && cb(null, code); });
     conn.on('data', d => recvList('H', d)); conn.on('close', () => hostGone()); conn.on('error', () => hostGone()); });
   peer.on('error', e => { NET.status = e.type === 'peer-unavailable' ? 'Комнаты с таким кодом нет' : netErr(e); onStatus(); cb && cb(NET.status); NET.leave(true); }); };
 function netErr(e) { return e.type === 'network' || e.type === 'server-error' || e.type === 'socket-error' ? 'Нет связи с сервером-сводником. Проверьте интернет' : e.type === 'browser-incompatible' ? 'Браузер не поддерживает прямое соединение' : 'Ошибка связи: ' + e.type; }
