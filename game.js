@@ -7,6 +7,7 @@ import { initMission } from './mission.js';
 import { LOOT } from './loot.js';
 import * as FX from './fx.js';
 import { ICONS } from './icons.js';
+import { NET } from './net.js';
 import { THREE, scene, camera, renderer, canvas, sunDir, sun, cloud, cloudMat, sky, islands, spires, makeIsland, makeSpire, rng, perlin3, STILL, vortex, CLUMP_G, CLUMP_M, CLUMP_D, ridged3, hemi, ROCK_VARIANTS, ROCKS } from './main.js';
 
 const PLANE = 36;             // высота, на которой идёт вся игра
@@ -130,12 +131,12 @@ const THEMES = {
   'M-2': { kinds: ['Джунгли', 'Остров с замком', 'Озёрный остров'], moods: ['tropic', 'autumn'], rock: 5, giant: true }, // джунгли и осень: вся порода — мшистый сланец; гигантские деревья мира остаются (Великое древо)
   'M-3': { kinds: [], set: 'm3', moods: [], rock: 9, bare: true },                                  // бездна: обсидиан и базальт, без зелени
 };
-let worldRock = 0, worldMood = 'summer';
+let worldRock = 0, worldMood = 'summer', worldId = null;
 const ISLET = { 'M-1': [8, 'conifer'], 'M-2': [5, 'tropic'], 'M-3': [9, 'dark'] };   // порода и лес островков под маяки и постаменты
 let worldBare = false;
 // воронка в облаках (шейдер облаков): своя у мира; в миссиях без спуска она убрана, M-2 ставит её туда, где открывает вихрь
 const VORTEX0 = vortex.clone(); function cloudVortex(x, z, r) { vortex.set(x, z, r || 0.001); }
-function setWorld(id) { const th = THEMES[id] || null; if (id && id !== 'M-3') cloudVortex(0, 0, 0); else vortex.copy(VORTEX0); [worldRock, worldMood] = ISLET[id] || [0, 'summer']; worldBare = !!(th && th.bare);
+function setWorld(id) { worldId = id || null; const th = THEMES[id] || null; if (id && id !== 'M-3') cloudVortex(0, 0, 0); else vortex.copy(VORTEX0); [worldRock, worldMood] = ISLET[id] || [0, 'summer']; worldBare = !!(th && th.bare);
   // в «голой» миссии (бездна) прячутся и островки мира с маяками и гигантскими деревьями: тема держится только на скалах миссии
   // островки мира под маяками и гигантскими деревьями в миссиях скрыты; в M-2 остаются только островки гигантских деревьев — голая порода миссии, без летнего леса
   for (const il of islands) { const giant = !il.kind && !il.collide && objects.some(o => o.vis && Math.hypot(o.x - il.x, o.z - il.z) < 15); const on = il.set ? !!th && il.set === th.set : !th || (il.kind ? th.kinds.includes(il.kind) : il.collide ? th.moods.includes(il.mood) : giant && !!th.giant);
@@ -147,8 +148,8 @@ function setWorld(id) { const th = THEMES[id] || null; if (id && id !== 'M-3') c
 const isletPool = new Map();
 function islet(x, z, { R = 34, seed = 0, life = 'stage' } = {}) { const key = R + ':' + worldRock + ':' + worldMood + ':' + seed; let q = isletPool.get(key);
   if (!q) { q = makeIsland({ x: 0, y: 26, z: 0, R, hill: 8, depth: R * 2.1, seed: 400 + seed, trees: worldBare ? 0 : R > 30 ? 8 : 5, rock: worldRock, mood: worldMood, detached: true }); isletPool.set(key, q); }
-  q.g.position.set(x, 0, z); obstacles.push({ x, z, rad: () => R * 0.8, life }); return q; }
-function dropObst(life) { for (let i = obstacles.length - 1; i >= 0; i--) if (obstacles[i].life === life) obstacles.splice(i, 1); }
+  q.g.position.set(x, 0, z); q.g.userData.rec = ['islet', x, z, R, seed, life]; obstacles.push({ x, z, rad: () => R * 0.8, life }); return q; }
+function dropObst(life) { for (let i = obstacles.length - 1; i >= 0; i--) if (obstacles[i].life === life) obstacles.splice(i, 1); if (NET.host) NET.bcast('dropObst', life); }
 function updateWorldFx(dt) { for (const m of waterfalls) m.uniforms.uT.value = time; for (const e of emitters) { if ((e.il && e.il.off) || dist2(P.x, P.z, e.x, e.z) > 1100) continue;
     if (rnd() < 0.12) { const a = rnd() * 6.28; fire.emit({ x: e.x + Math.cos(a) * rnd() * 22, y: e.y, z: e.z + Math.sin(a) * rnd() * 22, vx: Math.cos(a) * 18, vy: 40 + rnd() * 70, vz: Math.sin(a) * 18, life: 0.8 + rnd() * 0.8, s0: 8, s1: 2, r: 3.4, g: 0.9 + rnd(), b: 0.1, a: 1, drag: 0.6 }); } e.lava.material.color.setRGB(4.4 + Math.sin(time * 2.3) * 1.1, 1.15 + Math.sin(time * 3.1) * 0.3, 0.16); }
   updatePortalFx(dt); }
@@ -178,7 +179,7 @@ class Particles {
   }
 }
 const fire = new Particles(1400, true), smoke = new Particles(1400, false);
-function explosion(x, y, z, s = 1, tint = [3.2, 1.8, 0.4]) {
+function explosion(x, y, z, s = 1, tint = [3.2, 1.8, 0.4]) { NET.fx('explosion', [x, y, z, s, tint]);
   for (let i = 0; i < 16 * s; i++) { const a = rnd() * 6.28, e = (rnd() - 0.3) * 1.6, v = (30 + rnd() * 70) * s; fire.emit({ x, y, z, vx: Math.cos(a) * Math.cos(e) * v, vy: Math.sin(e) * v, vz: Math.sin(a) * Math.cos(e) * v, life: 0.35 + rnd() * 0.4, s0: 16 * s, s1: 46 * s, r: tint[0] * (0.8 + rnd() * 0.4), g: tint[1] * (0.8 + rnd() * 0.4), b: tint[2] * (0.8 + rnd() * 0.4), a: 0.9, drag: 3 }); }
   fire.emit({ x, y, z, life: 0.22, s0: 40 * s, s1: 150 * s, r: tint[0] + 0.4, g: tint[1] + 0.4, b: tint[2] + 0.4, a: 1 });
   for (let i = 0; i < 12 * s; i++) { const a = rnd() * 6.28, v = (12 + rnd() * 30) * s; smoke.emit({ x: x + (rnd() - 0.5) * 12 * s, y: y + (rnd() - 0.5) * 8, z: z + (rnd() - 0.5) * 12 * s, vx: Math.cos(a) * v, vy: 8 + rnd() * 16, vz: Math.sin(a) * v, life: 1.4 + rnd() * 1.4, s0: 24 * s, s1: 80 * s, r: 0.16, g: 0.15, b: 0.15, a: 0.55, drag: 1.2 }); }
@@ -226,8 +227,9 @@ function place(el, x, y, z) { V.set(x, y, z).project(camera); if (V.z > 1 || V.z
 function floatText(text, color, x, y, z, big) { V.set(x, y, z).project(camera); if (V.z > 1) return; const d = document.createElement('div'); d.className = big ? 'fl big' : 'fl'; d.textContent = text; d.style.color = color; d.style.left = ((V.x * 0.5 + 0.5) * innerWidth + (rnd() - 0.5) * 30) + 'px'; d.style.top = ((-V.y * 0.5 + 0.5) * innerHeight) + 'px'; labels.appendChild(d); setTimeout(() => d.remove(), 1150); }
 // модальное окно: игра стоит, пока не нажато «ОК». В сетевой игре — пока «ОК» не нажмут все
 const modalQ = []; let modalOn = false;
-function modal(head, text, kick, ok) { modalQ.push({ head, text, kick, ok }); if (!modalOn && !hangarOpen) nextModal(); }
-function nextModal() { const m = modalQ.shift(); if (!m) { modalOn = false; $('modal').style.display = 'none'; keys.clear(); return; } modalOn = true; $('modal-k').textContent = m.kick || ''; $('modal-h').textContent = m.head; $('modal-t').textContent = m.text; $('modal').style.display = 'flex'; $('modal-ok').onclick = () => { nextModal(); if (m.ok) m.ok(); }; setTimeout(() => $('modal-ok').focus(), 0); }
+function modal(head, text, kick, ok, mid) { if (NET.host && NET.live && !mid) { mid = ++modalN; NET.bcast('modal', [mid, head, text, kick]); } modalQ.push({ head, text, kick, ok, mid, acks: new Set(), need: NET.host ? new Set(NET.players().map(g => g.id)) : null }); if (!modalOn && !hangarOpen) nextModal(); }
+let modalN = 0, modalCur = null;
+function nextModal() { const m = modalQ.shift(); if (!m) { modalOn = false; $('modal').style.display = 'none'; keys.clear(); return; } modalOn = true; $('modal-k').textContent = m.kick || ''; $('modal-h').textContent = m.head; $('modal-t').textContent = m.text; $('modal').style.display = 'flex'; modalCur = m; $('modal-ok').disabled = false; $('modal-ok').textContent = 'ОК'; $('modal-ok').onclick = () => { if (m.mid && NET.live) return modalAck(m, NET.id); nextModal(); if (m.ok) m.ok(); }; setTimeout(() => $('modal-ok').focus(), 0); }
 let storyT = 0; function story(text, got, color) { $('story-t').textContent = text; const g = $('story-g'); g.textContent = got; g.style.color = color || '#ffe08a'; $('story').style.display = 'block'; storyT = 10; }
 let toastT = 0, muteLog = false; function log(text, color) { if (muteLog) return; const el = $('toast'); el.textContent = text; el.style.color = color || '#eef2f6'; el.style.display = 'block'; toastT = 2.6; }
 const meLbl = mkLabel('me', 'ВЫ');
@@ -260,7 +262,7 @@ function hudRes() { $('r-gold').textContent = fmt(res.gold); $('r-wood').textCon
 function gain(k, n, x, z) { res[k] += n; const nm = { wood: 'древесины', fish: 'рыбы', pearls: 'жемчуга' }[k]; if (nm && n > 0) floatText('+' + n + ' ' + nm, '#ffe08a', x ?? P.x, PLANE + 26, z ?? P.z); hudRes(); }
 // монеты: золото = 1, серебро = 0,7, медь = 0,5; всё складывается в общее золото. После открытия лавки монеты не падают
 const COIN_N = { gold: ['золотая', '#ffd24a'], silver: ['серебряная', '#dfe6ee'], bronze: ['медная', '#e0905a'] };
-function coin(kind, n = 1, x, z) { if (shop.open || n <= 0) return; let v = D.COIN[kind] * n * TIERS[tier].loot; if (has('F-20')) v *= 1.3; if (has('CREW-07')) v *= 1.15; res.gold += v; floatText(`+${n} ${COIN_N[kind][0]} (${fmt(v)})`, COIN_N[kind][1], x ?? P.x, PLANE + 30, z ?? P.z); hudRes(); return v; }
+function coin(kind, n = 1, x, z, ally) { if (shop.open || n <= 0) return; let v = D.COIN[kind] * n * TIERS[tier].loot; if (!ally) { if (has('F-20')) v *= 1.3; if (has('CREW-07')) v *= 1.15; } res.gold += v; if (NET.client) NET.req('gold', v); floatText(`+${n} ${COIN_N[kind][0]} (${fmt(v)})`, COIN_N[kind][1], x ?? P.x, PLANE + 30, z ?? P.z); hudRes(); return v; }
 // награда с тела: значок монеты, название и сколько золота, 3 секунды
 let lootT = 0; function lootToast(kind, n, v) { $('loot').innerHTML = `<img src="${COINS[kind]}" alt="" width="56" height="56"><div><b>${D.COIN_NAMES[kind]}${n > 1 ? ' × ' + n : ''}</b><span>+${fmt(v)} золота</span></div>`; $('loot').style.display = 'flex'; lootT = 1.5; }
 function heal(n, quiet) { if (P.dead) return; const h = Math.min(S.hp - P.hp, n); if (h <= 0) return; P.hp += h; if (!quiet) floatText('+' + Math.round(h), '#63dcb4', P.x, PLANE + 22, P.z); }
@@ -271,10 +273,10 @@ const mobSkin = new THREE.MeshStandardMaterial({ color: 0x3a2c40, roughness: 0.5
 const blobGeo = new THREE.SphereGeometry(1, 14, 10);
 function mobMesh(T) { const g = new THREE.Group(); const b = new THREE.Mesh(blobGeo, mobSkin); b.scale.set(T.r * 0.8, T.r * 0.45, T.r * 1.1); b.castShadow = true; g.add(b); applyModel(g, T.model, { scale: T.scale, tint: T.tint }); return g; }
 const mobs = [];
-function spawnMob(id, x, z, o = {}) { const T = D.MOBS[id] || D.BOSSES[id]; const boss = !!D.BOSSES[id]; const sc = o.scale || 1; const hp = T.hp * (o.hpMul || 1);
+function spawnMob(id, x, z, o = {}) { if (NET.client && !o.net) { NET.req('spawn', [id, Math.round(x), Math.round(z), { respawn: o.respawn, name: o.name, hpMul: o.hpMul, dmgMul: o.dmgMul, scale: o.scale }]); return null; } const T = D.MOBS[id] || D.BOSSES[id]; const boss = !!D.BOSSES[id]; const sc = o.scale || 1; const hp = T.hp * (o.hpMul || 1);
   const m = { id, T, boss, arm: T.arm, x, z, hx: x, hz: z, yaw: rnd() * 6.28, hp, max: hp, baseMax: hp, aggro: false, cd: 1 + rnd() * 2, burst: 0, kx: 0, kz: 0, wander: rnd() * 6.28, wt: 0, name: o.name || T.name, mesh: mobMesh(T), dmgMul: o.dmgMul || 1, baseDmg: o.dmgMul || 1, r: T.r * sc, respawn: o.respawn !== false, added: !!o.added, dead: 0, strafe: rnd() < 0.5 ? 1 : -1, cd2: 2 + rnd() * 3, lunge: 0, wind: 0, slam: 0, beam: 0, tick: 0, stun: 0, slow: 0, burn: 0, bt: 0, mark: 0, acid: 0, blind: 0, weak: 0 };
-  m.sc = sc; m.mesh.scale.setScalar(sc); m.mesh.position.set(x, PLANE, z); scene.add(m.mesh); m.lbl = mkLabel(boss ? 'boss' : '', m.name); mobs.push(m); return m; }
-function removeMob(m) { const i = mobs.indexOf(m); if (i < 0) return; m.gone = true; dropModel(m.mesh); scene.remove(m.mesh); m.lbl.remove(); mobs.splice(i, 1); if (target === m) target = null; }
+  m.sc = sc; m.mesh.scale.setScalar(sc); m.mesh.position.set(x, PLANE, z); scene.add(m.mesh); m.lbl = mkLabel(boss ? 'boss' : '', m.name); mobs.push(m); if (!o.net) NET.mobNid(m); return m; }
+function removeMob(m) { const i = mobs.indexOf(m); if (i < 0) return; m.gone = true; NET.mobRemoved(m); dropModel(m.mesh); scene.remove(m.mesh); m.lbl.remove(); mobs.splice(i, 1); if (target === m) target = null; }
 const START_MOBS = [[-330, 280, 'MOB-01', 3], [560, 300, 'MOB-09', 2], [760, -40, 'MOB-01', 2], [800, 20, 'MOB-09', 2], [-760, -220, 'MOB-16', 1], [160, -760, 'MOB-16', 1], [220, -700, 'MOB-09', 2], [-380, 900, 'MOB-01', 3], [1300, 200, 'MOB-09', 2], [-1000, 420, 'MOB-16', 1], [60, 420, 'MOB-10', 2], [-420, -250, 'MOB-10', 2], [1150, -420, 'MOB-10', 2],
   [-600, -900, 'MOB-02', 3], [900, -700, 'MOB-05', 3], [-1150, 120, 'MOB-11', 2], [-180, -1000, 'MOB-17', 1], [-260, 300, 'MOB-18', 1], [330, -330, 'MOB-19', 1]];
 function spawnStart() { START_MOBS.forEach(([x, z, id, n]) => { for (let i = 0; i < n; i++) { const [fx, fz] = freeSpot(x + (rnd() - 0.5) * 120, z + (rnd() - 0.5) * 120, D.MOBS[id].r + 40); spawnMob(id, fx, fz); } }); }
@@ -305,28 +307,34 @@ const inR = (x, z, r) => mobs.filter(m => !m.dead && dist2(x, z, m.x, m.z) < r +
 function hitMob(m, dmg, type = 0, o = {}) { if (!m || m.dead) return 0; let k = o.pierce ? 1.5 : D.ARMOR[m.arm].m[type]; let crit = false;
   if (!o.dot) { k *= S.dmg; if (P.buffW > 0) k *= 1.2; if (P.fDmg > 0) k *= 1.15; if (P.cry > 0) k *= 1.15; if (P.anchor > 0) k *= 1.3; if (has('F-09') && P.still > 2) k *= 1.3; if (P.over > 0) k *= 1.15; if (has('F-30') && P.hp < S.hp * 0.25) k *= 1.3; if (has('F-15') && m.hp < m.max * 0.3) k *= 1.35; if (P.gambit > 0 || (has('F-13') && rnd() < 0.2)) { k *= 2; crit = true; } }
   if (m.mark > 0) k *= 1.2; if (m.acid > 0) k *= 1.25; if (m.open > 0) k *= 2;
-  if (m.shell > 0) { if (type === 3) { m.shell = 0; burst(m.x, m.z, m.r + 30, '#ffb030', 24); log('Огонь растопил смоляной панцирь', '#ffe08a'); } else { k *= 0.4; if (time - (m.shT || -9) > 1.5) { m.shT = time; floatText('смола', '#ffb030', m.x, PLANE + 26 + m.r, m.z); } } }
+  let melt = 0; if (m.shell > 0) { if (type === 3) { m.shell = 0; melt = 1; burst(m.x, m.z, m.r + 30, '#ffb030', 24); log('Огонь растопил смоляной панцирь', '#ffe08a'); } else { k *= 0.4; if (time - (m.shT || -9) > 1.5) { m.shT = time; floatText('смола', '#ffb030', m.x, PLANE + 26 + m.r, m.z); } } }
   if ((m.T.sp === 'shield' || m.T.sp === 'back') && !o.dot && m.stun <= 0) { let a = Math.atan2(P.x - m.x, P.z - m.z) - m.yaw; a = Math.abs(Math.atan2(Math.sin(a), Math.cos(a))); if (m.T.sp === 'shield' && a < 1.0) { k *= 0.25; floatText('щит', '#9fe8ff', m.x, PLANE + 26 + m.r, m.z); } else if (m.T.sp === 'back' && a > 2.0) { k *= 2; floatText('в спину', '#ffe08a', m.x, PLANE + 26 + m.r, m.z); } }
   if (m.boss && MIS.bossBright()) k *= 1.15; if (m.boss && MIS.bossDim()) { k *= 0.5; if (!o.dot && time - (hitMob.dimT || -9) > 6) { hitMob.dimT = time; log('Маяк погас: без света урон по боссу вдвое ниже', '#ffb4a0'); } }
-  dmg = Math.max(1, Math.round(dmg * k)); m.hp -= dmg; if (SEE) m.aggro = true; floatText(crit ? 'КРИТ ' + dmg : String(dmg), crit ? '#ffd24a' : o.color ? txt(o.color) : '#ffffff', m.x, PLANE + 14 + m.r, m.z, crit);
+  dmg = Math.max(1, Math.round(dmg * k));
+  // гость: урон считает сам (свои усиления и броня цели), а снимает прочность и решает, сбит ли моб, ведущий
+  if (NET.client) { if (m.nid) NET.req('hit', [m.nid, dmg, type, crit ? 1 : 0, o.dot ? 1 : 0, melt]); m.hp = Math.max(1, m.hp - dmg); floatText(crit ? 'КРИТ ' + dmg : String(dmg), crit ? '#ffd24a' : o.color ? txt(o.color) : '#ffffff', m.x, PLANE + 14 + m.r, m.z, crit); if (has('F-18') && !o.dot) heal(dmg * 0.04, true); return dmg; }
+  m.hp -= dmg; if (SEE) m.aggro = true; floatText(crit ? 'КРИТ ' + dmg : String(dmg), crit ? '#ffd24a' : o.color ? txt(o.color) : '#ffffff', m.x, PLANE + 14 + m.r, m.z, crit);
   if (has('F-18') && !o.dot) heal(dmg * 0.04, true);
   if (m.hp <= 0) killMob(m); return dmg; }
-function killMob(m) { m.dead = 1; MIS.onKill(m); explosion(m.x, PLANE, m.z, m.boss ? 1.6 : m.T.cls === 2 ? 1.1 : 0.6);
+function killMob(m, remote) { m.dead = 1; MIS.onKill(m); explosion(m.x, PLANE, m.z, m.boss ? 1.6 : m.T.cls === 2 ? 1.1 : 0.6);
   // тело остаётся висеть: заваливается на бок или на спину и ждёт, пока над ним пролетят
   m.loot = shop.open ? null : m.boss ? ['gold', 5] : [['bronze', 'silver', 'gold'][m.T.cls], 1]; m.ct = 0; m.fade = -1; m.cside = rnd() < 0.5 ? 1 : -1; m.cy = m.mesh.position.y; pauseModel(m.mesh, true); m.far = null;
   m.lbl.firstChild.textContent = m.loot ? 'Добыча: пролетите над телом' : shop.open && !m.kid ? 'Без добычи: лавка открыта' : ''; m.lbl.classList.add('loot');
   if (m.kid) { m.loot = null; m.lbl.firstChild.textContent = ''; }
   if (m.stolen) { res.gold += m.stolen * 2; floatText('+' + fmt(m.stolen * 2) + ' золота', '#ffd24a', m.x, PLANE + 30, m.z); log('Ворюга сбит: золото вернулось вдвое', '#ffe08a'); m.stolen = 0; hudRes(); }
   if (m.T.sp === 'split' && !m.kid && !m.still) for (let i = 0; i < 3; i++) { const a = rnd() * 6.28, q = spawnMob(m.id, m.x + Math.cos(a) * 26, m.z + Math.sin(a) * 26, { respawn: false, scale: 0.55, hpMul: 0.35, name: 'Осколок' }); q.kid = true; q.mis = m.mis; q.aggro = m.aggro; q.kx = Math.cos(a) * 120; q.kz = Math.sin(a) * 120; }
-  if (has('F-21')) P.over = 5; if (target === m) target = null; m.rt = 60; }
+  if (has('F-21') && !remote) P.over = 5; if (target === m) target = null; m.rt = 60; }
 function corpse(m, dt) { m.ct += dt; const big = m.boss || m.T.cls === 2, e = 1 - Math.pow(1 - Math.min(1, m.ct / (big ? 1.4 : 0.8)), 3);
   m.mesh.rotation.z = m.cside * e * (big ? 1.35 : Math.PI);                    // крупные валятся на бок, мелкие переворачиваются на спину
   m.mesh.position.y = m.cy - e * m.r * (big ? 0.3 : 0.45) + Math.sin(time * 1.1 + m.hx) * 1.5 * e;
-  if (m.fade < 0) { if (m.loot && m.ct > 0.5 && !P.dead && P.dive <= 0 && dist2(P.x, P.z, m.x, m.z) < m.r + 34) { const [k, n] = m.loot; m.loot = null; const v = coin(k, n, m.x, m.z); if (v) lootToast(k, n, v); m.fade = 0.5; }
-    else if (m.ct > (m.loot ? 45 : m.kid ? 2.5 : 12)) { m.loot = null; m.fade = 0.5; }
+  if (m.fade < 0 && !NET.client) { const ally = m.loot && m.ct > 0.5 && NET.live ? NET.players().find(g => !g.dead && !(g.dive > 0) && dist2(g.x, g.z, m.x, m.z) < m.r + 40) : null;
+    if (m.loot && m.ct > 0.5 && !P.dead && P.dive <= 0 && dist2(P.x, P.z, m.x, m.z) < m.r + 34) { const [k, n] = m.loot; m.loot = null; const v = coin(k, n, m.x, m.z); if (v) lootToast(k, n, v); m.fade = 0.5; }
+    else if (ally) { const [k, n] = m.loot; m.loot = null; const v = coin(k, n, m.x, m.z, true); if (v) NET.tell(ally.id, 'loot', [k, n, v]); m.fade = 0.5; }
+    else if (m.ct > (m.loot ? 45 : m.kid ? 2.5 : 12)) { m.loot = null; m.fade = 0.5; } }
+  if (m.fade < 0) {
     if (m.loot && rnd() < dt * 3) fire.emit({ x: m.x + (rnd() - 0.5) * m.r, y: PLANE + m.r * 0.4 + rnd() * 10, z: m.z + (rnd() - 0.5) * m.r, vy: 22 + rnd() * 16, life: 0.8, s0: 2.6, s1: 0.4, r: 4, g: 3, b: 0.8, a: 1 }); }
   else if (m.fade > 0) { m.fade = Math.max(0, m.fade - dt); m.mesh.scale.setScalar(m.sc * Math.max(0.001, m.fade / 0.5)); if (m.fade === 0) { m.mesh.visible = false; m.lbl.style.display = 'none'; if (!m.respawn) removeMob(m); } } }
-function die() { MIS.onDeath(); P.hp = 0; P.dead = 5; P.lost = 0; P.rooted = 0; P.hex = 0; P.sleep = 0; P.ink = 0; P.rot = 0; explosion(P.x, PLANE, P.z, 2.4); ship.visible = false; target = null; log('Корабль сбит. В сетевой игре вас поднимут союзники.', '#ff7a66'); $('dead').style.display = 'flex'; }
+function die() { MIS.onDeath(); P.hp = 0; P.dead = waitRevive() ? 1e9 : 5; P.revive = 0; P.lost = 0; P.rooted = 0; P.hex = 0; P.sleep = 0; P.ink = 0; P.rot = 0; explosion(P.x, PLANE, P.z, 2.4); ship.visible = false; target = null; log(waitRevive() ? 'Корабль сбит. Союзники могут поднять вас: подлететь к обломкам и держать действие' : 'Корабль сбит', '#ff7a66'); $('dead-w').textContent = waitRevive() ? 'Ждите: союзники могут поднять вас. Если сбиты все, команда вернётся у последней отметки' : ''; $('dead-c').style.display = waitRevive() ? 'none' : ''; $('dead').style.display = 'flex'; }
 // урон по игроку: класс брони корабля (множитель по типу) и число брони (−5 % за единицу)
 function damagePlayer(dmg, why, type = 0, o = {}) { if (P.dead || P.dive > 0) return;
   if (!o.raw) { if (has('F-31') && rnd() < 0.12) return floatText('уворот', '#9fe8ff', P.x, PLANE + 22, P.z); if (has('F-22') && P.bubble <= 0) { P.bubble = 22; ball(34, '#8fe8ff', null, 0.7); shockRing(P.x, P.z, 40, 0x9fe8ff); return floatText('щит', '#9fe8ff', P.x, PLANE + 22, P.z); }
@@ -342,33 +350,39 @@ const matCache = new Map(); const flat = h => { if (!matCache.has(h)) matCache.s
 const ringMat2 = h => new THREE.MeshBasicMaterial({ color: typeof h === 'string' ? hexN(h) : h, transparent: true, opacity: 0.9, depthWrite: false, fog: false, toneMapped: false });
 const blast = r => r * (has('CREW-05') ? 1.25 : 1);
 const wRange = id => D.WEAPONS[id].range * (has('F-08') ? 1.25 : 1);
-function fireCannons(R) { const t = target, col = D.WEAPONS['W-1'].color, g = glow(col); const n = 4; const dx = t.x - P.x, dz = t.z - P.z; const side = Math.sign(Math.sin(Math.atan2(dx, dz) - P.yaw)) || 1; const rx = Math.cos(P.yaw) * side, rz = -Math.sin(P.yaw) * side; const pierce = P.pierce; P.pierce = false;
+function fireCannons(R) { if (target && target.nid) NET.fx('cannVis', [target.nid, P.x, P.z, P.yaw]); const t = target, col = D.WEAPONS['W-1'].color, g = glow(col); const n = 4; const dx = t.x - P.x, dz = t.z - P.z; const side = Math.sign(Math.sin(Math.atan2(dx, dz) - P.yaw)) || 1; const rx = Math.cos(P.yaw) * side, rz = -Math.sin(P.yaw) * side; const pierce = P.pierce; P.pierce = false;
   for (let i = 0; i < n; i++) { const off = (i - 1.5) * 7; const sx = P.x + rx * 9 + Math.sin(P.yaw) * off, sz = P.z + rz * 9 + Math.cos(P.yaw) * off; const hit = rnd() * 100 < P.aim; const d = Math.hypot(t.x - sx, t.z - sz); const miss = hit ? 0 : (rnd() < 0.5 ? -1 : 1) * (0.12 + rnd() * 0.12); const ang = Math.atan2(t.x - sx, t.z - sz) + miss; const mesh = new THREE.Mesh(shellGeo, flat(col)); scene.add(mesh);
     shots.push({ kind: 'shell', mesh, g, col, x: sx, y: PLANE + 4, z: sz, vx: Math.sin(ang) * 560, vz: Math.cos(ang) * 560, life: (d + (hit ? 0 : 220)) / 560, hit, t, pierce, dmg: (26 + rnd() * 8) * (has('CREW-01') ? 1.15 : 1), delay: i * 0.07 });
     fire.emit({ x: sx, y: PLANE + 4, z: sz, life: 0.16, s0: 14, s1: 48, r: g[0], g: g[1], b: g[2], a: 1 }); for (let k = 0; k < 4; k++) smoke.emit({ x: sx, y: PLANE + 4, z: sz, vx: rx * (20 + rnd() * 30), vy: 4 + rnd() * 8, vz: rz * (20 + rnd() * 30), life: 0.9 + rnd() * 0.6, s0: 8, s1: 34, r: 1.3, g: 1.3, b: 1.35, a: 0.4, drag: 2.5 }); } }
-function fireRocket(t, dmg, col, x = P.x, z = P.z, yaw = P.yaw) { const g = glow(col); const mesh = new THREE.Mesh(rocketGeo, flat(col)); scene.add(mesh); shots.push({ kind: 'rocket', mesh, g, col, x, y: PLANE + 9, z, yaw, sp: 126, life: 6, t, dmg }); fire.emit({ x, y: PLANE + 9, z, life: 0.2, s0: 20, s1: 60, r: g[0], g: g[1], b: g[2], a: 1 }); }
-function fireMortar(tx, tz, dmg, rad, col, sx = P.x, sz = P.z, dur = 1.6) { const g = glow(col); const mesh = new THREE.Mesh(mortGeo, flat(col)); scene.add(mesh); const mark = new THREE.Mesh(markGeo, ringMat2(col)); mark.scale.setScalar(blast(rad)); mark.position.set(tx, PLANE - 6, tz); mark.renderOrder = 14; scene.add(mark);
-  shots.push({ kind: 'mortar', mesh, mark, g, col, sx, sz, tx, tz, t0: 0, dur, dmg, rad: blast(rad) }); fire.emit({ x: sx, y: PLANE + 12, z: sz, life: 0.2, s0: 24, s1: 70, r: g[0], g: g[1], b: g[2], a: 1 }); }
-function enemyShot(m, dmg, sp, off = 0) { const ang = Math.atan2(P.x - m.x, P.z - m.z) + off + (rnd() - 0.5) * 0.08 + (m.blind > 0 ? (rnd() - 0.5) * 1.6 : 0); const mesh = new THREE.Mesh(shellGeo, eShotMat); mesh.scale.setScalar(1.8); scene.add(mesh); shots.push({ kind: 'enemy', mesh, x: m.x, y: PLANE + 2, z: m.z, vx: Math.sin(ang) * sp, vz: Math.cos(ang) * sp, life: 3.2, dmg, m, type: m.T.atk, from: m.name }); fire.emit({ x: m.x, y: PLANE + 2, z: m.z, life: 0.18, s0: 12, s1: 34, r: 3.5, g: 0.8, b: 1.6, a: 1 }); }
+function fireRocket(t, dmg, col, x = P.x, z = P.z, yaw = P.yaw, vis) { if (!vis) NET.fx('rockVis', [t && t.nid || 0, col, x, z, yaw]); const g = glow(col); const mesh = new THREE.Mesh(rocketGeo, flat(col)); scene.add(mesh); shots.push({ kind: 'rocket', vis, mesh, g, col, x, y: PLANE + 9, z, yaw, sp: 126, life: 6, t, dmg }); fire.emit({ x, y: PLANE + 9, z, life: 0.2, s0: 20, s1: 60, r: g[0], g: g[1], b: g[2], a: 1 }); }
+function fireMortar(tx, tz, dmg, rad, col, sx = P.x, sz = P.z, dur = 1.6, vis) { if (!vis) NET.fx('mortVis', [tx, tz, rad, col, sx, sz, dur]); const g = glow(col); const mesh = new THREE.Mesh(mortGeo, flat(col)); scene.add(mesh); const mark = new THREE.Mesh(markGeo, ringMat2(col)); mark.scale.setScalar(blast(rad)); mark.position.set(tx, PLANE - 6, tz); mark.renderOrder = 14; scene.add(mark);
+  shots.push({ kind: 'mortar', vis, mesh, mark, g, col, sx, sz, tx, tz, t0: 0, dur, dmg, rad: blast(rad) }); fire.emit({ x: sx, y: PLANE + 12, z: sz, life: 0.2, s0: 24, s1: 70, r: g[0], g: g[1], b: g[2], a: 1 }); }
+function enemyShot(m, dmg, sp, off = 0) { const ang = Math.atan2(TP.x - m.x, TP.z - m.z) + off + (rnd() - 0.5) * 0.08 + (m.blind > 0 ? (rnd() - 0.5) * 1.6 : 0); eShotVis(m.x, m.z, ang, sp, false, m, dmg); NET.fx('eShotVis', [m.x, m.z, ang, sp]); }
+function eShotVis(x, z, ang, sp, vis, m, dmg) { const mesh = new THREE.Mesh(shellGeo, eShotMat); mesh.scale.setScalar(1.8); scene.add(mesh); shots.push({ kind: 'enemy', vis, mesh, x, y: PLANE + 2, z, vx: Math.sin(ang) * sp, vz: Math.cos(ang) * sp, life: 3.2, dmg, m, type: m ? m.T.atk : 0, from: m ? m.name : '' }); fire.emit({ x, y: PLANE + 2, z, life: 0.18, s0: 12, s1: 34, r: 3.5, g: 0.8, b: 1.6, a: 1 }); }
 const warns = [];
-function warnRing(x, z, r, dur) { const m = new THREE.Mesh(markGeo, ringMat2(0xff3048)); m.position.set(x, PLANE - 4, z); m.scale.setScalar(r); m.renderOrder = 14; scene.add(m); warns.push({ m, t: 0, dur }); }
-function enemyBomb(m, dmg) { const mesh = new THREE.Mesh(mortGeo, eShotMat); scene.add(mesh); const tx = P.x + Math.sin(P.yaw) * P.speed * 1.2, tz = P.z + Math.cos(P.yaw) * P.speed * 1.2; warnRing(tx, tz, 80, 2.0); shots.push({ kind: 'ebomb', mesh, sx: m.x, sz: m.z, tx, tz, t0: 0, dur: 2.0, dmg, m, from: m.name }); }
-function updateShots(dt) {
+function warnRing(x, z, r, dur) { NET.fx('warnRing', [x, z, r, dur]); const m = new THREE.Mesh(markGeo, ringMat2(0xff3048)); m.position.set(x, PLANE - 4, z); m.scale.setScalar(r); m.renderOrder = 14; scene.add(m); warns.push({ m, t: 0, dur }); }
+function enemyBomb(m, dmg) { const tx = TP.x + Math.sin(TP.yaw) * TP.speed * 1.2, tz = TP.z + Math.cos(TP.yaw) * TP.speed * 1.2; warnRing(tx, tz, 80, 2.0); eBombVis(m.x, m.z, tx, tz, false, m, dmg); NET.fx('eBombVis', [m.x, m.z, tx, tz]); }
+function eBombVis(sx, sz, tx, tz, vis, m, dmg) { const mesh = new THREE.Mesh(mortGeo, eShotMat); scene.add(mesh); shots.push({ kind: 'ebomb', vis, mesh, sx, sz, tx, tz, t0: 0, dur: 2.0, dmg, m, from: m ? m.name : '' }); }
+function updateShots(dt) { NET.mute++; try { shotsStep(dt); } finally { NET.mute--; } }
+function shotsStep(dt) {
   for (let i = shots.length - 1; i >= 0; i--) { const s = shots[i]; let done = false; const g = s.g;
     if (s.kind === 'shell') { if (s.delay > 0) { s.delay -= dt; s.mesh.visible = false; continue; } s.mesh.visible = true; s.x += s.vx * dt; s.z += s.vz * dt; s.life -= dt; fire.emit({ x: s.x, y: s.y, z: s.z, life: 0.22, s0: 9, s1: 2, r: g[0], g: g[1], b: g[2], a: 0.95 });
-      const land = () => { hitMob(s.t, s.dmg, 0, { color: s.col, pierce: s.pierce }); explosion(s.t.x, s.y, s.t.z, 0.5, g); if (has('F-23')) for (const m of inR(s.t.x, s.t.z, 55)) if (m !== s.t) hitMob(m, s.dmg * 0.4, 0, { color: s.col }); };
+      const land = () => { if (s.vis) return explosion(s.t.x, s.y, s.t.z, 0.5, g); hitMob(s.t, s.dmg, 0, { color: s.col, pierce: s.pierce }); explosion(s.t.x, s.y, s.t.z, 0.5, g); if (has('F-23')) for (const m of inR(s.t.x, s.t.z, 55)) if (m !== s.t) hitMob(m, s.dmg * 0.4, 0, { color: s.col }); };
       if (s.hit && !s.t.dead && dist2(s.x, s.z, s.t.x, s.t.z) < s.t.r + 8) { land(); done = true; } else if (s.life <= 0) { if (s.hit && !s.t.dead) land(); else puff(s.x, s.y - 20, s.z, 16, [0.9, 0.9, 0.95], 0.5, 0.8); done = true; } }
     else if (s.kind === 'rocket') { s.life -= dt; s.sp = Math.min(273, s.sp + 231 * dt); if (s.t && !s.t.dead) { const want = Math.atan2(s.t.x - s.x, s.t.z - s.z); let d = want - s.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); s.yaw += clamp(d, -3.2 * dt, 3.2 * dt); }
       s.x += Math.sin(s.yaw) * s.sp * dt; s.z += Math.cos(s.yaw) * s.sp * dt; s.y = lerp(s.y, PLANE + 2, 1 - Math.exp(-2 * dt)); s.mesh.rotation.y = s.yaw;
       fire.emit({ x: s.x - Math.sin(s.yaw) * 4, y: s.y, z: s.z - Math.cos(s.yaw) * 4, life: 0.45, s0: 12, s1: 3, r: g[0], g: g[1], b: g[2], a: 1 }); smoke.emit({ x: s.x - Math.sin(s.yaw) * 5, y: s.y, z: s.z - Math.cos(s.yaw) * 5, vy: 3, life: 1.4 + rnd() * 0.6, s0: 6, s1: 28, r: 1.4, g: 1.1, b: 1.3, a: 0.4 });
-      for (const m of mobs) if (!m.dead && dist2(s.x, s.z, m.x, m.z) < m.r + 6) { hitMob(m, s.dmg, 1, { color: s.col }); for (const q of inR(s.x, s.z, blast(45))) if (q !== m) hitMob(q, s.dmg * 0.3, 1, { color: s.col }); explosion(s.x, s.y, s.z, 1.2, g); done = true; break; }
+      for (const m of mobs) if (!m.dead && dist2(s.x, s.z, m.x, m.z) < m.r + 6) { if (!s.vis) hitMob(m, s.dmg, 1, { color: s.col }); if (!s.vis) for (const q of inR(s.x, s.z, blast(45))) if (q !== m) hitMob(q, s.dmg * 0.3, 1, { color: s.col }); explosion(s.x, s.y, s.z, 1.2, g); done = true; break; }
       if (!done && (s.life <= 0 || obstacleAt(s.x, s.z, 0))) { explosion(s.x, s.y, s.z, 0.9, g); done = true; } }
     else if (s.kind === 'mortar') { s.t0 += dt; const k = Math.min(1, s.t0 / s.dur); s.x = lerp(s.sx, s.tx, k); s.z = lerp(s.sz, s.tz, k); s.y = PLANE + 10 + Math.sin(k * Math.PI) * 170; s.mark.material.opacity = 0.5 + 0.5 * Math.sin(s.t0 * 22); fire.emit({ x: s.x, y: s.y, z: s.z, life: 0.4, s0: 10, s1: 2, r: g[0], g: g[1], b: g[2], a: 0.6 });
-      if (k >= 1) { explosion(s.tx, PLANE, s.tz, s.rad / 26, g); for (const m of inR(s.tx, s.tz, s.rad)) hitMob(m, s.dmg, 1, { color: s.col }); scene.remove(s.mark); done = true; } }
-    else if (s.kind === 'ebomb') { s.t0 += dt; const k = Math.min(1, s.t0 / s.dur); s.x = lerp(s.sx, s.tx, k); s.z = lerp(s.sz, s.tz, k); s.y = PLANE + 6 + Math.sin(k * Math.PI) * 150; fire.emit({ x: s.x, y: s.y, z: s.z, life: 0.4, s0: 12, s1: 3, r: 2.4, g: 0.3, b: 1.0, a: 0.8 }); if (k >= 1) { explosion(s.tx, PLANE, s.tz, 2.2, [2.6, 0.4, 1.2]); if (!P.dead && dist2(s.tx, s.tz, P.x, P.z) < 85) damagePlayer(s.dmg, s.from + ': бомба', 1, { from: s.m }); done = true; } }
+      if (k >= 1) { explosion(s.tx, PLANE, s.tz, s.rad / 26, g); if (!s.vis) for (const m of inR(s.tx, s.tz, s.rad)) hitMob(m, s.dmg, 1, { color: s.col }); scene.remove(s.mark); done = true; } }
+    else if (s.kind === 'ebomb') { s.t0 += dt; const k = Math.min(1, s.t0 / s.dur); s.x = lerp(s.sx, s.tx, k); s.z = lerp(s.sz, s.tz, k); s.y = PLANE + 6 + Math.sin(k * Math.PI) * 150; fire.emit({ x: s.x, y: s.y, z: s.z, life: 0.4, s0: 12, s1: 3, r: 2.4, g: 0.3, b: 1.0, a: 0.8 }); if (k >= 1) { explosion(s.tx, PLANE, s.tz, 2.2, [2.6, 0.4, 1.2]); if (!s.vis) for (const q of teamPlayers(true)) if (dist2(s.tx, s.tz, q.x, q.z) < 85) hurtP(q, s.dmg, s.from + ': бомба', 1, { from: s.m }); done = true; } }
     else { s.x += s.vx * dt; s.z += s.vz * dt; s.life -= dt; fire.emit({ x: s.x, y: s.y, z: s.z, life: 0.25, s0: 9, s1: 3, r: 3.2, g: 0.6, b: 1.6, a: 0.9 });
       const dp = dist2(s.x, s.z, P.x, P.z); const shield = zones.find(zn => zn.shield && dist2(s.x, s.z, zn.x, zn.z) < zn.r);
-      if (shield) { puff(s.x, s.y, s.z, 14, [0.8, 0.8, 0.9], 0.6, 0.5); done = true; }
+      const gh = !s.vis && NET.live ? NET.players().find(g => !g.dead && !(g.dive > 0) && dist2(s.x, s.z, g.x, g.z) < (g.mirror ? 60 : 17)) : null;
+      if (s.vis) { if ((!P.dead && dp < 17) || shield || s.life <= 0 || obstacleAt(s.x, s.z, 0)) { puff(s.x, s.y, s.z, 14, [0.9, 0.6, 0.8], 0.5, 0.6); done = true; } }
+      else if (gh) { if (gh.sh) puff(s.x, s.y, s.z, 14, [0.8, 0.8, 0.9], 0.6, 0.5); else if (gh.mirror) { bolt(s.x, s.z, s.m.x, s.m.z, '#C0C0C0'); hitMob(s.m, s.dmg, s.type, { dot: true, color: '#C0C0C0' }); } else { hurtP(gh.proxy, s.dmg, s.from, s.type, { from: s.m }); explosion(s.x, s.y, s.z, 0.5); } done = true; }
+      else if (shield) { puff(s.x, s.y, s.z, 14, [0.8, 0.8, 0.9], 0.6, 0.5); done = true; }
       else if (P.mirror > 0 && dp < 60) { bolt(s.x, s.z, s.m.x, s.m.z, '#C0C0C0'); hitMob(s.m, s.dmg, s.type, { dot: true, color: '#C0C0C0' }); done = true; }
       else if (!P.dead && dp < 17) { damagePlayer(s.dmg, s.from, s.type, { from: s.m }); explosion(s.x, s.y, s.z, 0.5); done = true; } else if (s.life <= 0 || obstacleAt(s.x, s.z, 0)) { puff(s.x, s.y, s.z, 14, [0.9, 0.6, 0.8], 0.5, 0.6); done = true; } }
     if (done) { scene.remove(s.mesh); shots.splice(i, 1); } else s.mesh.position.set(s.x, s.y, s.z);
@@ -377,16 +391,16 @@ function updateShots(dt) {
 
 // ---------- эффекты: кольца, молнии, зоны ----------
 const rings = [];
-function shockRing(x, z, r, color) { const m = FX.wave(color); m.position.set(x, PLANE - 2, z); m.scale.setScalar(1); scene.add(m); rings.push({ m, t: 0, r }); }
+function shockRing(x, z, r, color) { NET.fx('shockRing', [x, z, r, color]); const m = FX.wave(color); m.position.set(x, PLANE - 2, z); m.scale.setScalar(1); scene.add(m); rings.push({ m, t: 0, r }); }
 const WHITE = new THREE.Color(1, 1, 1);
 // молния: две скрещённые ленты, чтобы была видна и сверху, и сбоку
-function bolt(ax, az, bx, bz, color = '#bfe8ff', jit = 22, w = 1.4) { const n = 9, g = glow(color, 3), pos = [], idx = []; const Ln = Math.hypot(bx - ax, bz - az) || 1, nx = -(bz - az) / Ln, nz = (bx - ax) / Ln;
+function bolt(ax, az, bx, bz, color = '#bfe8ff', jit = 22, w = 1.4) { NET.fx('bolt', [ax, az, bx, bz, color, jit, w]); const n = 9, g = glow(color, 3), pos = [], idx = []; const Ln = Math.hypot(bx - ax, bz - az) || 1, nx = -(bz - az) / Ln, nz = (bx - ax) / Ln;
   for (let i = 0; i <= n; i++) { const k = i / n, j = (i === 0 || i === n) ? 0 : 1; const x = lerp(ax, bx, k) + (rnd() - 0.5) * jit * j, y = PLANE + 4 + (rnd() - 0.5) * jit * 0.7 * j, z = lerp(az, bz, k) + (rnd() - 0.5) * jit * j;
     pos.push(x + nx * w, y, z + nz * w, x - nx * w, y, z - nz * w, x, y + w, z, x, y - w, z); if (i < n) { const b = i * 4; idx.push(b, b + 1, b + 4, b + 1, b + 5, b + 4, b + 2, b + 3, b + 6, b + 3, b + 7, b + 6); }
     if (i % 3 === 1) fire.emit({ x, y, z, life: 0.28, s0: 20, s1: 5, r: g[0], g: g[1], b: g[2], a: 0.9 }); }
   const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx);
   const l = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: new THREE.Color(color).lerp(WHITE, 0.5), transparent: true, opacity: 1, fog: false, toneMapped: false, side: THREE.DoubleSide, depthWrite: false })); l.renderOrder = 16; l.frustumCulled = false; scene.add(l); rings.push({ m: l, t: 0, bolt: true }); }
-function burst(x, z, r, color, n = 30) { const g = glow(color); shockRing(x, z, r, hexN(color)); fire.emit({ x, y: PLANE + 6, z, life: 0.3, s0: r * 0.3, s1: r * 0.9, r: g[0], g: g[1], b: g[2], a: 0.5 }); for (let i = 0; i < n; i++) { const a = rnd() * 6.28, v = r * (0.8 + rnd() * 1.2); fire.emit({ x, y: PLANE + (rnd() - 0.5) * 10, z, vx: Math.cos(a) * v, vy: (rnd() - 0.3) * 30, vz: Math.sin(a) * v, life: 0.5 + rnd() * 0.4, s0: 12, s1: 3, r: g[0], g: g[1], b: g[2], a: 0.9, drag: 2 }); } }
+function burst(x, z, r, color, n = 30) { NET.fx('burst', [x, z, r, color, n]); const g = glow(color); shockRing(x, z, r, hexN(color)); fire.emit({ x, y: PLANE + 6, z, life: 0.3, s0: r * 0.3, s1: r * 0.9, r: g[0], g: g[1], b: g[2], a: 0.5 }); for (let i = 0; i < n; i++) { const a = rnd() * 6.28, v = r * (0.8 + rnd() * 1.2); fire.emit({ x, y: PLANE + (rnd() - 0.5) * 10, z, vx: Math.cos(a) * v, vy: (rnd() - 0.3) * 30, vz: Math.sin(a) * v, life: 0.5 + rnd() * 0.4, s0: 12, s1: 3, r: g[0], g: g[1], b: g[2], a: 0.9, drag: 2 }); } }
 const zones = [];
 // установки (турель, мортирная башня, электромаяк, манок, обманка, дрон): у них есть прочность, мобы рядом их бьют
 function struct(zn, name, hp) { zn.struct = true; zn.hp = zn.max = hp; zn.name = name; zn.lbl = mkLabel('struct', name); return zn; }
@@ -394,7 +408,7 @@ function struct(zn, name, hp) { zn.struct = true; zn.hp = zn.max = hp; zn.name =
 function strongest(x, z, R) { let best = null, bk = -1; for (const m of mobs) { if (m.dead || dist2(x, z, m.x, m.z) > R) continue; const k = (m.boss ? 3 : (m.T.cls || 0)) * 1e6 + m.hp; if (k > bk) { bk = k; best = m; } } return best; }
 // зона: круг на облаках, живёт life секунд, раз в every вызывает tick
 // prop — модель в центре (имя из fx.js или готовый объект), py — её высота над плоскостью полёта, dome — купол, smoke/dens — частицы
-function zone(o) { const dec = FX.decal(o.r, o.color, o.fill ?? 0.5, o.spin || 0); dec.position.set(o.x, PLANE - 5, o.z); scene.add(dec); const parts = [dec];
+function zone(o) { if (!o.follow && (!o.prop || typeof o.prop === 'string')) NET.fx('zone', [{ x: o.x, z: o.z, r: o.r, life: o.life, color: o.color, prop: o.prop, py: o.py, ps: o.ps, fill: o.fill, spin: o.spin, smoke: o.smoke, dens: o.dens, pcol: o.pcol, dome: o.dome }]); const dec = FX.decal(o.r, o.color, o.fill ?? 0.5, o.spin || 0); dec.position.set(o.x, PLANE - 5, o.z); scene.add(dec); const parts = [dec];
   let post = null; if (o.prop) { post = typeof o.prop === 'string' ? FX.prop(o.prop, o.color) : o.prop; post.position.set(o.x, PLANE + (o.py ?? 4), o.z); post.userData.base = post.position.clone(); scene.add(post); parts.push(post); }
   let domeM = null; if (o.dome) { domeM = FX.dome(o.r, o.color, o.dome === 'ball'); domeM.position.set(o.x, PLANE, o.z); scene.add(domeM); parts.push(domeM); }
   const zn = Object.assign({ t: 0, acc: 0, pacc: 0, every: 0.5, g: glow(o.color), dens: 0 }, o, { dec, post, domeM, parts }); zones.push(zn); return zn; }
@@ -462,7 +476,7 @@ function updateAuto() { if (P.dead || P.sleep > 0 || !L.auto || !L.auto.length) 
     if (go) { muteLog = true; try { use(n); } finally { muteLog = false; } } }); }
 // ---------- пауза: в сетевой игре останавливает игру у всех ----------
 let paused = false;
-function setPause(v) { paused = v; $('pausebox').style.display = v ? 'flex' : 'none'; $('pause-k').textContent = keyName(KEY.pause); }
+function setPause(v, net) { if (!net && NET.client) return NET.req('pause', v); if (NET.host) NET.bcast('pause', v); paused = v; $('pausebox').style.display = v ? 'flex' : 'none'; $('pause-k').textContent = keyName(KEY.pause); }
 // подсказка над слотом: что это, чем бьёт, против какой брони сильнее и слабее
 const lowFirst = s => s.charAt(0).toLowerCase() + s.slice(1);
 function showTip(sl) { const el = $('tip'), w = D.WEAPONS[sl.id], it = w || D.DEVICES[sl.id] || D.SKILLS[sl.id]; if (!it || !sl.el) return; let h = `<b>${it.name}</b>`;
@@ -503,14 +517,14 @@ function useDevice(sl) { const id = sl.id, col = D.DEVICES[id].color, c = { colo
   else if (id === 'EQ-13') { const x = P.x, z = P.z; warnRing(x, z, blast(150), 4); zone({ x, z, r: 14, life: 4, color: col, prop: 'dynamite', py: 4, ps: 1.4, fill: 0.8, fx: zn => { if (rnd() < 0.5) fire.emit({ x: zn.x + (rnd() - 0.5) * 4, y: PLANE + 14, z: zn.z + (rnd() - 0.5) * 4, vx: (rnd() - 0.5) * 30, vy: 20 + rnd() * 30, vz: (rnd() - 0.5) * 30, life: 0.3, s0: 3.5, s1: 1, r: 2.2, g: 1.3, b: 0.3, a: 1 }); }, end: zn => { explosion(x, PLANE, z, 4.5, zn.g); for (const m of inR(x, z, blast(150))) hitMob(m, 260, 1, c); if (!P.dead && dist2(P.x, P.z, x, z) < blast(150)) damagePlayer(60, 'Свой динамит', 1); } }); }
   else if (id === 'EQ-14') { if (!target) { log('Ржавый рой: сначала выберите цель'); return false; } target.noheal = 10; burst(target.x, target.z, target.r + 20, col, 40); { const m = target; stick(FX.prop('marker', col), o => o.position.set(m.x, PLANE + m.r + 20, m.z), () => !m.dead && !m.gone && m.noheal > 0); } log(`Мехо-блохи: ${target.name} 10 секунд не может лечиться`, txt(col)); }
   else if (id === 'EQ-15') { P.turbo = 5; burst(P.x, P.z, 70, col, 40); shockRing(P.x, P.z, 120, hexN(col)); log('Турбо: пять секунд корабль летит втрое быстрее', txt(col)); }
-  else if (id === 'EQ-16') { const m = target; if (!m) { log('Лебёдка: цель не выбрана, а союзников рядом нет', txt(col)); return false; } if (m.boss) { log(`Лебёдка: ${m.name} слишком тяжёл, его не сдвинуть`, txt(col)); return false; }
+  else if (id === 'EQ-16') { const m = target; if (!m) { const g = NET.players().filter(q => !q.dead).sort((a, b) => dist2(P.x, P.z, a.x, a.z) - dist2(P.x, P.z, b.x, b.z))[0], d = g ? dist2(P.x, P.z, g.x, g.z) : 1e9; if (g && d < 520 && d > 40) { const f = Math.min(700, d * 2.4); NET.toPeer(g.id, 'imp', [(P.x - g.x) / d * f, (P.z - g.z) / d * f]); bolt(P.x, P.z, g.x, g.z, col, 3, 1.6); log(`Лебёдка: тянем ${g.nick}`, txt(col)); return true; } log('Лебёдка: цель не выбрана, а союзников рядом нет', txt(col)); return false; } if (m.boss) { log(`Лебёдка: ${m.name} слишком тяжёл, его не сдвинуть`, txt(col)); return false; }
     const d = dist2(P.x, P.z, m.x, m.z) || 1; if (d > 520) { log('Лебёдка: цель слишком далеко'); return false; } const f = Math.min(900, d * 3.2) * (m.T.cls === 2 ? 0.45 : 1); m.kx = (P.x - m.x) / d * f; m.kz = (P.z - m.z) / d * f; m.slow = Math.max(m.slow, 1.5);
     bolt(P.x, P.z, m.x, m.z, col, 3, 1.6); burst(m.x, m.z, m.r + 14, col, 16); { let n = 0; stick(FX.prop('marker', col), o => o.position.set(m.x, PLANE + m.r + 16, m.z), () => !m.dead && !m.gone && n++ < 50); } }
   else if (id === 'EQ-17') { if (P.hp >= S.hp) { log('Ремкомплект: корпус цел, чинить нечего', txt(col)); return false; } P.kit = 5; ball(30, col, 'kit'); log('Ремкомплект: команда латает корпус', txt(col)); }
   else NET();
   return true; }
 function useSkill(sl) { const id = sl.id, k = D.SKILLS[id], col = SKILL_COL[id] || '#ffd58a', c = { color: col }; const fx = () => burst(P.x, P.z, 60, col, 24);
-  if (k.net) { fx(); log(`${k.name}: нужен союзник, работает в сетевой игре`, txt(col)); return true; }
+  if (k.net) { if (NET.live && (id === 'S-07' || id === 'S-08' || id === 'S-21')) return netSkill(id, col); fx(); log(NET.live ? `${k.name}: пока только эффект` : `${k.name}: нужен союзник, работает в сетевой игре`, txt(col)); return true; }
   if (id === 'S-01') { P.rapid = 9; fx(); }
   else if (id === 'S-02') { P.pierce = true; fx(); log('Следующий залп пушек пробьёт броню'); }
   else if (id === 'S-03') { if (!target) { log('Метка: сначала выберите цель'); return false; } target.mark = 15; burst(target.x, target.z, target.r + 16, col, 20); const m = target; stick(FX.prop('marker', col), o => o.position.set(m.x, PLANE + m.r + 20, m.z), () => !m.dead && !m.gone && m.mark > 0); }
@@ -615,6 +629,7 @@ let treeSeed = 0; function makeTreeSpot(x, z, model, life = 'stage') { const g =
   loadModel(model).then(m => { if (m) { const q = m.proto.clone(); q.traverse(n => { if (n.isMesh) n.castShadow = true; }); tr.add(q); } }); g.add(il.g, tr); scene.add(g); const o = { kind: 'tree', x, z, r: 150, cd: 0, g }; addObjLabel(o, 'Дерево'); objects.push(o); return o; }
 // обыск островов
 for (const il of islands) if (il.collide) { const o = { kind: 'island', x: il.x, z: il.z, r: il.R * 1.3 + 90, cd: 0, il }; addObjLabel(o, (il.kind || 'Островок') + ': можно обыскать'); objects.push(o); }
+objects.forEach((o, i) => { o.wid = i; });   // постоянные номера объектов мира: по ним капитаны в сети ссылаются на остров, пруд или дерево
 
 let channel = null;
 const PROMPT = () => { const e = keyName(KEY.act); return { beacon: e + ': зажечь маяк', tree: e + ': начать добычу древесины', fish: e + ': забросить сети', island: e + ': обыскать остров' }; };
@@ -633,14 +648,15 @@ function lucky(kind) { const q = LUCK[kind]; if (q.n % 3 === 0) q.at = (rnd() * 
 // особый улов: значок, имя и эффект на 3 секунды в той же плашке, что и монета
 // у пруда перед боссом (лавка уже открыта) золотой окунь не ловится
 function special(kind, noGold) { const q = LUCK[kind], isG = i => noGold && D.CATCH[kind][i][3] === 'gold'; const fill = () => { q.bag = [0, 1, 2, 3, 4]; for (let i = 4; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; [q.bag[i], q.bag[j]] = [q.bag[j], q.bag[i]]; } };
-  if (!q.bag.length || q.bag.every(isG)) fill(); let at = q.bag.length - 1; while (at > 0 && isG(q.bag[at])) at--; const [ic, name, text, eff, v] = D.CATCH[kind][q.bag.splice(at, 1)[0]]; if (eff === 'heal') heal(v); else if (eff === 'gold') { res.gold += v; hudRes(); } else if (eff === 'gear') { for (const q of slots) if (q.kind === 'd') q.cd = 0; } else P[eff] = v;
+  if (!q.bag.length || q.bag.every(isG)) fill(); let at = q.bag.length - 1; while (at > 0 && isG(q.bag[at])) at--; const [ic, name, text, eff, v] = D.CATCH[kind][q.bag.splice(at, 1)[0]]; if (eff === 'heal') heal(v); else if (eff === 'gold') { res.gold += v; if (NET.client && !shop.open) NET.req('gold', v); hudRes(); } else if (eff === 'gear') { for (const q of slots) if (q.kind === 'd') q.cd = 0; } else P[eff] = v;
   $('loot').innerHTML = `<img src="${LOOT[ic]}" alt="" width="56" height="56"><div><b>${name}</b><span>${text}</span></div>`; $('loot').style.display = 'flex'; lootT = 3; log(`${name}: ${text.charAt(0).toLowerCase() + text.slice(1)}`, '#ffe08a'); }
 function finish(o) {
   if (o.kind === 'mis') return o.onDone();
   if (o.kind === 'beacon') { o.lit = true; o.lampM.emissiveIntensity = 9; o.beam.visible = true; o.lbl.firstChild.textContent = 'Маяк горит'; res.beacons++; coin('silver', 2, o.x, o.z); log('Маяк зажжён: туман вокруг рассеялся, корпус починен на 60', '#ffe08a'); heal(60); hudRes(); }
-  else if (o.kind === 'tree') { const n = 18 + (rnd() * 10 | 0); gain('wood', n, P.x, P.z); log(`Добыто древесины: ${n}`, '#ffe08a'); o.cd = 60; if (lucky('wood')) special('wood', o.boss || shop.open); MIS.onGather(o); }
-  else if (o.kind === 'fish') { o.cd = 60; const n = 8 + (rnd() * 8 | 0); gain('fish', n, P.x, P.z); log(`Улов: ${n} рыбы`, '#ffe08a'); special('fish', o.boss || shop.open); MIS.onGather(o); const cp = MIS.onCatch(o); if (cp) later(3.2, () => { $('loot').innerHTML = `<img src="${LOOT.compass}" alt="" width="56" height="56"><div><b>Рыба-компас</b><span>${cp}</span></div>`; $('loot').style.display = 'flex'; lootT = 3.5; }); }
-  else { o.cd = 150; o.searched = true; { const ms = MIS.onSearch(o); if (ms) return story(ms[0], ms[1], '#ffe08a'); } let ev = searchRoll(); if (ev === 'trap' && has('CREW-04')) ev = 'stash'; const ax = P.x + (P.x - o.x) * 0.35, az = P.z + (P.z - o.z) * 0.35;
+  else if (o.kind === 'tree') { const n = 18 + (rnd() * 10 | 0); gain('wood', n, P.x, P.z); log(`Добыто древесины: ${n}`, '#ffe08a'); o.cd = 60; if (lucky('wood')) special('wood', o.boss || shop.open); if (NET.client) NET.req('gather', [objRef(o), 0]); else MIS.onGather(o); }
+  else if (o.kind === 'fish') { o.cd = 60; const n = 8 + (rnd() * 8 | 0); gain('fish', n, P.x, P.z); log(`Улов: ${n} рыбы`, '#ffe08a'); special('fish', o.boss || shop.open); if (NET.client) return NET.req('gather', [objRef(o), 1]); MIS.onGather(o); const cp = MIS.onCatch(o); if (cp) later(3.2, () => { $('loot').innerHTML = `<img src="${LOOT.compass}" alt="" width="56" height="56"><div><b>Рыба-компас</b><span>${cp}</span></div>`; $('loot').style.display = 'flex'; lootT = 3.5; }); }
+  else { o.cd = 150; if (NET.client) return NET.req('search', o.wid); o.searched = true; NET.bcast('searched', o.wid); { const ms = MIS.onSearch(o); if (ms) return story(ms[0], ms[1], '#ffe08a'); } searchRest(o); } }
+function searchRest(o) { { let ev = searchRoll(); if (ev === 'trap' && has('CREW-04')) ev = 'stash'; const ax = P.x + (P.x - o.x) * 0.35, az = P.z + (P.z - o.z) * 0.35;
     const tell = (got, color) => story(D.STORY[ev][(rnd() * D.STORY[ev].length) | 0], got, color);
     if (ev === 'stash') { const pe = 2 + (rnd() * 3 | 0), br = 2 + (rnd() * 3 | 0); gain('pearls', pe); const g0 = res.gold; coin('bronze', br); tell(`Нашли: жемчуг ×${pe}` + (res.gold > g0 ? ` и медные монеты ×${br} (+${fmt(res.gold - g0)} золота)` : ''), '#ffe08a'); }
     else if (ev === 'gold') { const g0 = res.gold; coin('silver', 3 + (rnd() * 3 | 0)); tell(shop.open ? 'Золото уже не в счёт: лавка открыта' : `Получили: ${fmt(res.gold - g0)} золота`, '#ffe08a'); }
@@ -667,7 +683,7 @@ addEventListener('keydown', e => { const c = e.code; if (modalOn) { e.preventDef
   else if (a === 'swap') log(`Замена: держите ${keyName(KEY.swap)} и нажмите клавишу слота`);
   else if (DASH[a] && held('dash')) dash(...DASH[P.hex > 0 ? HEXK[a] : a]); else if (a === 'dash') { const h = Object.keys(DASH).filter(k => held(k)); if (h.length === 1) dash(...DASH[h[0]]); } });
 addEventListener('keyup', e => { keys.delete(e.code); }); addEventListener('blur', () => { keys.clear(); });
-function dash(side, fwd) { if (P.dead || P.dashCd > 0 || P.anchor > 0 || P.sleep > 0 || P.rooted > 0) return; for (const m of mobs) if (m.att) { m.att = false; m.cd = 5; m.kx = (rnd() - 0.5) * 300; m.kz = (rnd() - 0.5) * 300; } const lx = Math.cos(P.yaw) * side + Math.sin(P.yaw) * fwd, lz = -Math.sin(P.yaw) * side + Math.cos(P.yaw) * fwd; const v = 340 * (has('F-04') ? 2 : 1) * (1 + shopUp('spd') / 100); P.dvx = lx * v; P.dvz = lz * v; P.dashCd = (1.2 - (has('CREW-02') ? 0.3 : 0)) * (has('CREW-10') ? 0.8 : 1); P.dashT = 0.4; shockRing(P.x, P.z, 60, 0x8dff2a); if (P.flood > 0) flood(P.flood - 1);
+function dash(side, fwd) { if (P.dead || P.dashCd > 0 || P.anchor > 0 || P.sleep > 0 || P.rooted > 0) return; if (NET.client) NET.req('dash', 1); for (const m of mobs) if (m.att) { m.att = false; m.cd = 5; m.kx = (rnd() - 0.5) * 300; m.kz = (rnd() - 0.5) * 300; } const lx = Math.cos(P.yaw) * side + Math.sin(P.yaw) * fwd, lz = -Math.sin(P.yaw) * side + Math.cos(P.yaw) * fwd; const v = 340 * (has('F-04') ? 2 : 1) * (1 + shopUp('spd') / 100); P.dvx = lx * v; P.dvz = lz * v; P.dashCd = (1.2 - (has('CREW-02') ? 0.3 : 0)) * (has('CREW-10') ? 0.8 : 1); P.dashT = 0.4; shockRing(P.x, P.z, 60, 0x8dff2a); if (P.flood > 0) flood(P.flood - 1);
   if (has('F-25')) { for (const m of inR(P.x, P.z, 70)) hitMob(m, 60, 4, { color: '#7DF9FF' }); burst(P.x, P.z, 70, '#7DF9FF', 16); }
   for (let i = 0; i < 26; i++) fire.emit({ x: P.x + (rnd() - 0.5) * 20, y: PLANE + (rnd() - 0.5) * 8, z: P.z + (rnd() - 0.5) * 20, vx: -lx * (40 + rnd() * 120), vy: (rnd() - 0.5) * 30, vz: -lz * (40 + rnd() * 120), life: 0.4 + rnd() * 0.3, s0: 16, s1: 3, r: 0.35, g: 2.2, b: 0.05, a: 1, drag: 2 }); }
 function cycleTarget() { const list = mobs.filter(m => !m.dead && dist2(P.x, P.z, m.x, m.z) < 900).sort((a, b) => dist2(P.x, P.z, a.x, a.z) - dist2(P.x, P.z, b.x, b.z)); if (!list.length) return; const i = list.indexOf(target); target = list[(i + 1) % list.length]; inspect = target; inspDirty = true; if (!has('CREW-01')) P.aim = 0; }
@@ -713,35 +729,35 @@ function updateFog(dt) { updateTier(dt); let w = FOG.want, clear = 0;
 let leechN = 0, fogNear = false; const webs = [], laters = [];
 function later(t, fn) { laters.push({ t, fn }); }
 const webGeo = new THREE.RingGeometry(0.12, 1, 14, 5).rotateX(-Math.PI / 2), webMat = new THREE.MeshBasicMaterial({ color: 0xf2f2ea, wireframe: true, transparent: true, opacity: 0.75, depthWrite: false });
-function addWeb(x, z) { const m = new THREE.Mesh(webGeo, webMat); m.position.set(x, PLANE - 3, z); m.scale.setScalar(85); m.rotation.y = rnd() * 6.28; m.renderOrder = 12; scene.add(m); webs.push({ x, z, r: 85, t: 12, m }); }
+function addWeb(x, z) { NET.fx('addWeb', [x, z]); const m = new THREE.Mesh(webGeo, webMat); m.position.set(x, PLANE - 3, z); m.scale.setScalar(85); m.rotation.y = rnd() * 6.28; m.renderOrder = 12; scene.add(m); webs.push({ x, z, r: 85, t: 12, m }); }
 function updateWebs(dt) { let ins = false; for (let i = webs.length - 1; i >= 0; i--) { const w = webs[i]; w.t -= dt; const me = !P.dead && dist2(P.x, P.z, w.x, w.z) < w.r; if (me && (P.flame > 0 || P.trail > 0)) { w.t = 0; burst(w.x, w.z, w.r, '#FF8C00', 16); log('Паутина сгорела', '#ffb070'); } if (w.t <= 0) { scene.remove(w.m); webs.splice(i, 1); continue; } if (me) ins = true; } if (ins && !P.web) log('Корабль увяз в паутине: её сжигает огнемёт или зажигательный след', '#ffb4a0'); P.web = ins ? 1 : 0; }
 function sleepNow(t) { if (P.dead || P.sleep > 0) return; P.sleep = t; P.speed *= 0.3; channel = null; log('Корабль уснул. В сети его будит толчок союзника, в одиночном полёте сон проходит сам', '#d8f07a'); }
 const SP = {
-  boom(m, dt, d, dm, spd, want) { const moving = Math.abs(P.speed) > 18 || P.dashT > 0;
-    if (d < m.r + 26) { explosion(m.x, PLANE, m.z, 1.5, [3.4, 1.4, 0.3]); shockRing(m.x, m.z, 75, 0xff8a3a); damagePlayer(m.T.dmg * 2.2 * dm, m.name + ': взрыв', 1, { from: m }); m.hp = 0; killMob(m); m.loot = null; m.lbl.firstChild.textContent = ''; return [0, 0]; }
+  boom(m, dt, d, dm, spd, want) { const moving = Math.abs(TP.speed) > 18 || TP.dashT > 0;
+    if (d < m.r + 26) { explosion(m.x, PLANE, m.z, 1.5, [3.4, 1.4, 0.3]); shockRing(m.x, m.z, 75, 0xff8a3a); hurt(m.T.dmg * 2.2 * dm, m.name + ': взрыв', 1, { from: m }); m.hp = 0; killMob(m); m.loot = null; m.lbl.firstChild.textContent = ''; return [0, 0]; }
     if (moving && rnd() < dt * 18) fire.emit({ x: m.x, y: PLANE + 2, z: m.z, life: 0.3, s0: 9, s1: 2, r: 3.2, g: 1.4, b: 0.2, a: 0.9 });
     const k = moving ? 1.6 : 0.18; return [Math.sin(want) * spd * k, Math.cos(want) * spd * k]; },
-  leech(m, dt, d, dm) { if (m.att) { leechN++; m.tick -= dt; if (m.tick <= 0) { m.tick = 1; damagePlayer(m.T.dmg * dm * (has('F-29') ? 0.5 : 1), m.name, 2, { raw: true }); } const a = P.yaw + m.ao; m.x = P.x + Math.sin(a) * (m.r + 17); m.z = P.z + Math.cos(a) * (m.r + 17); return [0, 0, P.yaw]; }
-    if (d < m.r + 24 && m.cd <= 0.5) { m.att = true; m.ao = rnd() * 6.28; m.tick = 1; log('Пиявка присосалась: стряхните её рывком', '#ff9c8a'); } return null; },
-  thief(m, dt, d, dm, spd, want) { if (m.run > 0) { m.run -= dt; if (m.run <= 0 && m.stolen) { log('Ворюга ушёл с вашим золотом', '#ff9c8a'); m.dead = 1; m.fade = 0; m.mesh.visible = false; m.lbl.style.display = 'none'; later(0, () => removeMob(m)); } return [-Math.sin(want) * spd * 1.15, -Math.cos(want) * spd * 1.15, want + Math.PI]; }
-    if (d < m.r + 26) { const g = shop.open ? 0 : Math.min(res.gold, 3); if (g > 0) { res.gold -= g; m.stolen = (m.stolen || 0) + g; hudRes(); floatText('−' + fmt(g) + ' золота', '#ff7a66', P.x, PLANE + 30, P.z); log('Ворюга украл золото: догоните и сбейте его, вернёте вдвое', '#ff9c8a'); } m.run = 14; return [0, 0]; }
+  leech(m, dt, d, dm) { if (m.att) { if (TP === P) leechN++; m.tick -= dt; if (m.tick <= 0) { m.tick = 1; hurt(m.T.dmg * dm * (has('F-29') ? 0.5 : 1), m.name, 2, { raw: true }); } const a = TP.yaw + m.ao; m.x = TP.x + Math.sin(a) * (m.r + 17); m.z = TP.z + Math.cos(a) * (m.r + 17); return [0, 0, TP.yaw]; }
+    if (d < m.r + 24 && m.cd <= 0.5) { m.att = true; m.ao = rnd() * 6.28; m.tick = 1; tlog('Пиявка присосалась: стряхните её рывком', '#ff9c8a'); } return null; },
+  thief(m, dt, d, dm, spd, want) { if (m.run > 0) { m.run -= dt; if (m.run <= 0 && m.stolen) { tlog('Ворюга ушёл с вашим золотом', '#ff9c8a'); m.dead = 1; m.fade = 0; m.mesh.visible = false; m.lbl.style.display = 'none'; later(0, () => removeMob(m)); } return [-Math.sin(want) * spd * 1.15, -Math.cos(want) * spd * 1.15, want + Math.PI]; }
+    if (d < m.r + 26) { const g = shop.open ? 0 : Math.min(res.gold, 3); if (g > 0) { res.gold -= g; m.stolen = (m.stolen || 0) + g; hudRes(); floatText('−' + fmt(g) + ' золота', '#ff7a66', TP.x, PLANE + 30, TP.z); tlog('Ворюга украл золото: догоните и сбейте его, вернёте вдвое', '#ff9c8a'); } m.run = 14; return [0, 0]; }
     return [Math.sin(want) * spd * 1.2, Math.cos(want) * spd * 1.2]; },
-  web(m, dt, d) { if (d < 460 && m.cd2 <= 0) { m.cd2 = 9; addWeb(P.x + Math.sin(P.yaw) * P.speed * 0.9, P.z + Math.cos(P.yaw) * P.speed * 0.9); } return null; },
+  web(m, dt, d) { if (d < 460 && m.cd2 <= 0) { m.cd2 = 9; addWeb(TP.x + Math.sin(TP.yaw) * TP.speed * 0.9, TP.z + Math.cos(TP.yaw) * TP.speed * 0.9); } return null; },
   brood(m) { if (m.cd2 <= 0) { m.cd2 = 8; if (mobs.reduce((n, q) => n + (q.mom === m && !q.dead ? 1 : 0), 0) < 9) { for (let i = 0; i < 3; i++) { const a = rnd() * 6.28, k = spawnMob('MOB-01', m.x + Math.cos(a) * 40, m.z + Math.sin(a) * 40, { respawn: false }); k.mom = m; k.kid = true; k.mis = m.mis; k.aggro = true; } burst(m.x, m.z, 50, '#ffd58a', 10); } } return null; },
-  aim(m, dt, d, dm) { m.cd = 9; if (d > 560) { m.at = 0; return null; } m.at = (m.at || 0) + dt; if (P.dashT > 0 && m.at > 0.3) { m.at = 0; floatText('прицел сбит', '#9fe8ff', m.x, PLANE + 30, m.z); }
-    m.lt = (m.lt || 0) - dt; if (m.lt <= 0) { m.lt = 0.14; bolt(m.x, m.z, P.x, P.z, m.at > 2.2 ? '#ff3030' : '#ffb090', 0, 0.5); } if (m.at >= 3) { m.at = 0; enemyShot(m, m.T.dmg * 1.4 * dm, 460, 0); } return null; },
-  tug(m, dt, d, dm, spd) { if (m.grab > 0) { m.grab -= dt; if (m.gh - m.hp >= 70 || P.dead) { m.grab = 0; m.cd2 = 12; if (!P.dead) log('Клещ отцепился', '#ffe08a'); return null; }
-      const a = Math.atan2(m.x, m.z); m.tick -= dt; if (m.tick <= 0) { m.tick = 1; damagePlayer(m.T.dmg * dm, m.name, 2, { from: m }); } P.x = m.x - Math.sin(a) * (m.r + 22); P.z = m.z - Math.cos(a) * (m.r + 22); P.speed = 0; P.dvx = 0; P.dvz = 0; if (m.grab <= 0) m.cd2 = 12; return [Math.sin(a) * spd * 1.1, Math.cos(a) * spd * 1.1, a]; }
-    if (d < m.r + 30 && m.cd2 <= 0) { m.grab = 6; m.gh = m.hp; m.tick = 1; log('Клещ вцепился и тащит прочь: нанесите ему 70 урона', '#ff9c8a'); } return null; },
-  hex(m, dt, d) { if (m.cast > 0) { m.cast -= dt; m.lt = (m.lt || 0) - dt; if (m.lt <= 0) { m.lt = 0.12; bolt(m.x, m.z, P.x, P.z, '#c070ff', 10, 0.8); } if (m.cast <= 0 && !P.dead) { P.hex = 10; burst(P.x, P.z, 50, '#c070ff', 18); log('Сглаз: десять секунд руль, тяга и слоты работают наоборот', '#d9a0ff'); } }
-    else if (d < 420 && m.cd2 <= 0 && !(P.hex > 0)) { m.cast = 1.4; m.cd2 = 22; } return null; },
-  sleep(m, dt, d) { if (d < 400 && m.cd2 <= 0 && !(P.sleep > 0)) { m.cd2 = 20; const x = P.x + Math.sin(P.yaw) * P.speed * 0.8, z = P.z + Math.cos(P.yaw) * P.speed * 0.8; warnRing(x, z, 80, 1.6); bolt(m.x, m.z, x, z, '#d8f07a', 14, 0.8);
-      later(1.6, () => { if (m.dead || P.dead) return; burst(x, z, 80, '#d8f07a', 26); if (dist2(P.x, P.z, x, z) < 86) sleepNow(5); }); } return null; },
-  rot(m, dt, d, dm) { m.tick -= dt; if (m.tick <= 0) { m.tick = 0.5; m.rn = !m.rn; if (m.rn) shockRing(m.x, m.z, 150, 0x9be05a); if (d < 150) { damagePlayer(5 * dm * (has('F-29') ? 0.5 : 1), m.name + ': разъедание', 0, { raw: true }); P.rot = 1.2; } } return null; },
-  jam(m, dt, d) { if (d < 380 && m.cd2 <= 0) { m.cd2 = 11; const ws = slots.filter(q => q.kind === 'w'), q = ws[(rnd() * ws.length) | 0]; if (q) { q.cd = Math.max(q.cd, 8); bolt(m.x, m.z, P.x, P.z, '#ffcf5a', 12, 1.2); log(`Глушитель: ${q.name} молчит восемь секунд`, '#ffe08a'); } } return null; },
-  ink(m, dt, d) { if (d < m.r + 40 && m.cd2 <= 0) { m.cd2 = 14; P.ink = 6; burst(P.x, P.z, 50, '#30304a', 20); log('Чернила: шесть секунд не видно ни неба, ни карты', '#b9b9d0'); } return null; },
-  pull(m, dt, d) { if (m.pull > 0) { m.pull -= dt; if (d > m.r + 40) { P.dvx -= (P.x - m.x) / d * 440 * dt; P.dvz -= (P.z - m.z) / d * 440 * dt; } m.lt = (m.lt || 0) - dt; if (m.lt <= 0) { m.lt = 0.12; bolt(m.x, m.z, P.x, P.z, '#6aa0ff', 8, 1); } return [0, 0]; }
-    if (d < 430 && d > 110 && m.cd2 <= 0) { m.pull = 2.6; m.cd2 = 10; warnRing(m.x, m.z, m.r + 20, 0.6); log('Магнитник тянет корабль к себе', '#9cc0ff'); } return null; },
+  aim(m, dt, d, dm) { m.cd = 9; if (d > 560) { m.at = 0; return null; } m.at = (m.at || 0) + dt; if (TP.dashT > 0 && m.at > 0.3) { m.at = 0; floatText('прицел сбит', '#9fe8ff', m.x, PLANE + 30, m.z); }
+    m.lt = (m.lt || 0) - dt; if (m.lt <= 0) { m.lt = 0.14; bolt(m.x, m.z, TP.x, TP.z, m.at > 2.2 ? '#ff3030' : '#ffb090', 0, 0.5); } if (m.at >= 3) { m.at = 0; enemyShot(m, m.T.dmg * 1.4 * dm, 460, 0); } return null; },
+  tug(m, dt, d, dm, spd) { if (m.grab > 0) { m.grab -= dt; if (m.gh - m.hp >= 70 || TP.dead) { m.grab = 0; m.cd2 = 12; if (!TP.dead) tlog('Клещ отцепился', '#ffe08a'); return null; }
+      const a = Math.atan2(m.x, m.z); m.tick -= dt; if (m.tick <= 0) { m.tick = 1; hurt(m.T.dmg * dm, m.name, 2, { from: m }); } TP.x = m.x - Math.sin(a) * (m.r + 22); TP.z = m.z - Math.cos(a) * (m.r + 22); TP.speed = 0; TP.dvx = 0; TP.dvz = 0; if (m.grab <= 0) m.cd2 = 12; return [Math.sin(a) * spd * 1.1, Math.cos(a) * spd * 1.1, a]; }
+    if (d < m.r + 30 && m.cd2 <= 0) { m.grab = 6; m.gh = m.hp; m.tick = 1; tlog('Клещ вцепился и тащит прочь: нанесите ему 70 урона', '#ff9c8a'); } return null; },
+  hex(m, dt, d) { if (m.cast > 0) { m.cast -= dt; m.lt = (m.lt || 0) - dt; if (m.lt <= 0) { m.lt = 0.12; bolt(m.x, m.z, TP.x, TP.z, '#c070ff', 10, 0.8); } if (m.cast <= 0 && !TP.dead) { TP.hex = 10; burst(TP.x, TP.z, 50, '#c070ff', 18); tlog('Сглаз: десять секунд руль, тяга и слоты работают наоборот', '#d9a0ff'); } }
+    else if (d < 420 && m.cd2 <= 0 && !(TP.hex > 0)) { m.cast = 1.4; m.cd2 = 22; } return null; },
+  sleep(m, dt, d) { if (d < 400 && m.cd2 <= 0 && !(TP.sleep > 0)) { m.cd2 = 20; const tp = TP, x = TP.x + Math.sin(TP.yaw) * TP.speed * 0.8, z = TP.z + Math.cos(TP.yaw) * TP.speed * 0.8; warnRing(x, z, 80, 1.6); bolt(m.x, m.z, x, z, '#d8f07a', 14, 0.8);
+      later(1.6, () => { if (m.dead || tp.dead) return; burst(x, z, 80, '#d8f07a', 26); if (dist2(tp.x, tp.z, x, z) < 86) tsleep(tp, 5); }); } return null; },
+  rot(m, dt, d, dm) { m.tick -= dt; if (m.tick <= 0) { m.tick = 0.5; m.rn = !m.rn; if (m.rn) shockRing(m.x, m.z, 150, 0x9be05a); if (d < 150) { hurt(5 * dm * (has('F-29') ? 0.5 : 1), m.name + ': разъедание', 0, { raw: true }); TP.rot = 1.2; } } return null; },
+  jam(m, dt, d) { if (d < 380 && m.cd2 <= 0 && TP !== P) { m.cd2 = 11; bolt(m.x, m.z, TP.x, TP.z, '#ffcf5a', 12, 1.2); NET.tell(TP.id, 'jam', 0); } if (d < 380 && m.cd2 <= 0) { m.cd2 = 11; const ws = slots.filter(q => q.kind === 'w'), q = ws[(rnd() * ws.length) | 0]; if (q) { q.cd = Math.max(q.cd, 8); bolt(m.x, m.z, TP.x, TP.z, '#ffcf5a', 12, 1.2); tlog(`Глушитель: ${q.name} молчит восемь секунд`, '#ffe08a'); } } return null; },
+  ink(m, dt, d) { if (d < m.r + 40 && m.cd2 <= 0) { m.cd2 = 14; TP.ink = 6; burst(TP.x, TP.z, 50, '#30304a', 20); tlog('Чернила: шесть секунд не видно ни неба, ни карты', '#b9b9d0'); } return null; },
+  pull(m, dt, d) { if (m.pull > 0) { m.pull -= dt; if (d > m.r + 40) { TP.dvx -= (TP.x - m.x) / d * 440 * dt; TP.dvz -= (TP.z - m.z) / d * 440 * dt; } m.lt = (m.lt || 0) - dt; if (m.lt <= 0) { m.lt = 0.12; bolt(m.x, m.z, TP.x, TP.z, '#6aa0ff', 8, 1); } return [0, 0]; }
+    if (d < 430 && d > 110 && m.cd2 <= 0) { m.pull = 2.6; m.cd2 = 10; warnRing(m.x, m.z, m.r + 20, 0.6); tlog('Магнитник тянет корабль к себе', '#9cc0ff'); } return null; },
   fog(m, dt, d, dm, spd, want) { const k = d < 190 ? -1 : d > 300 ? 1 : 0, sa = want + Math.PI / 2; return [(Math.sin(want) * k + Math.sin(sa) * 0.5) * spd, (Math.cos(want) * k + Math.cos(sa) * 0.5) * spd]; },
   mend(m, dt, d, dm, spd) { let near = null, nd = 1e9; for (const q of mobs) if (q !== m && !q.dead && q.T.sp !== 'mend') { const e = dist2(m.x, m.z, q.x, q.z); if (e < nd) { nd = e; near = q; } }
     const mv = near ? (nd > 150 ? [(near.x - m.x) / nd * spd, (near.z - m.z) / nd * spd] : [0, 0]) : null; m.tick -= dt; if (m.tick <= 0) { m.tick = 1.5; for (const q of mobs) if (q !== m && !q.dead && q.hp < q.max && !(q.noheal > 0) && dist2(m.x, m.z, q.x, q.z) < 240) { q.hp = Math.min(q.max, q.hp + q.max * (q.boss ? 0.004 : 0.06)); bolt(m.x, m.z, q.x, q.z, '#7dff8a', 8, 0.8); } } return mv; },
@@ -753,14 +769,14 @@ const SKYT = { '-2': [[0.3, 0.25, 0.55], [0.5, 0.4, 0.75]], '-1': [[0.7, 0.55, 1
 let tierLook = null; function setTierLook(o) { tierLook = o; }
 function updateTier(dt) { const T = tierLook || TIERS[tier], K = (tierLook && tierLook.sky) || SKYT[tier], a = 1 - Math.exp(-0.3 * dt), u = sky.material.uniforms; renderer.toneMappingExposure += (T.exp - renderer.toneMappingExposure) * a; sun.intensity += (T.sun - sun.intensity) * a; hemi.intensity += (T.hemi - hemi.intensity) * a;
   cloudMat.uniforms.uShade.value.lerp(fogTmp.setRGB(...T.shade), a); tierHaze.lerp(fogTmp.setRGB(...T.haze), a); tierFog.lerp(fogTmp.setHex(T.fog), a); u.uTintZ.value.lerp(fogTmp.setRGB(...K[0]), a); u.uTintH.value.lerp(fogTmp.setRGB(...K[1]), a); }
-function setTier(n) { tier = n; const T = TIERS[n];
-  for (const m of mobs) { if (!m.respawn) { if (!m.added) { m.dead = 1; setTimeout(() => removeMob(m), 0); } continue; } m.max = m.baseMax * T.hp; m.hp = m.max; m.dmgMul = m.baseDmg * T.dmg; m.dead = 0; m.aggro = false; m.x = m.hx; m.z = m.hz; m.mesh.visible = true; }
+function setTier(n) { tier = n; const T = TIERS[n]; if (NET.host && NET.live && !NET.mute) NET.bcast('tier', n);
+  if (!NET.client) for (const m of mobs) { if (!m.respawn) { if (!m.added) { m.dead = 1; setTimeout(() => removeMob(m), 0); } continue; } m.max = m.baseMax * T.hp; m.hp = m.max; m.dmgMul = m.baseDmg * T.dmg; m.dead = 0; m.aggro = false; m.x = m.hx; m.z = m.hz; m.mesh.visible = true; }
   for (const s of shots) { scene.remove(s.mesh); if (s.mark) scene.remove(s.mark); } shots.length = 0; target = null; for (const zn of zones) zn.t = 1e9; $('r-tier').textContent = (n > 0 ? '+' : '') + n; log(T.name + (n === 0 ? '' : `: мобы сильнее, монеты ×${T.loot}`), '#ffd58a'); }
-function travel(dir, fromX, fromZ) { const n = tier + dir; if (!TIERS[n]) { if (portalCd <= 0) { log(dir < 0 ? 'Глубже пути нет: это нижний ярус' : 'Выше пути нет: это верхний ярус'); portalCd = 3; } return; }
+function travel(dir, fromX, fromZ) { if (NET.client && !NET.mute) { if (portalCd <= 0) { portalCd = 4; NET.req('travel', [dir, fromX, fromZ]); } return; } const n = tier + dir; if (NET.host && TIERS[n]) NET.bcast('travel', [dir, fromX, fromZ]); if (!TIERS[n]) { if (portalCd <= 0) { log(dir < 0 ? 'Глубже пути нет: это нижний ярус' : 'Выше пути нет: это верхний ярус'); portalCd = 3; } return; }
   const f = $('fade'); f.style.opacity = 1; portalCd = 4; P.speed = 0; P.dvx = 0; P.dvz = 0; setTimeout(() => { setTier(n); const a = Math.atan2(-fromX, -fromZ); const R = dir < 0 ? 470 : 330; P.x = fromX + Math.sin(a) * R; P.z = fromZ + Math.cos(a) * R; P.yaw = a; first = true; f.style.opacity = 0; }, STILL ? 0 : 450); }
 // переход миссии на другой ярус: затемнение, ярус, корабль ставится в точку
-function goTier(n, x, z) { const f = $('fade'); f.style.opacity = 1; portalCd = 4; P.speed = 0; P.dvx = 0; P.dvz = 0; const go = () => { setTier(n); P.x = x; P.z = z; first = true; f.style.opacity = 0; }; if (STILL) go(); else setTimeout(go, 450); }
-function portalMesh(up, k = 0.5) { const m = (up ? tornado : whirl).clone(); m.scale.setScalar(k); if (up) m.position.y = 420 * k; m.visible = true; return m; }
+function goTier(n, x, z) { if (NET.host) NET.bcast('goTier', [n, x, z]); if (NET.mute) { x += teamSlot() * 45; } const f = $('fade'); f.style.opacity = 1; portalCd = 4; P.speed = 0; P.dvx = 0; P.dvz = 0; const go = () => { setTier(n); P.x = x; P.z = z; first = true; f.style.opacity = 0; }; if (STILL) go(); else setTimeout(go, 450); }
+function portalMesh(up, k = 0.5) { const m = (up ? tornado : whirl).clone(); m.userData.rec = ['portal', up, k]; m.scale.setScalar(k); if (up) m.position.y = 420 * k; m.visible = true; return m; }
 function checkPortals() { portalCd = Math.max(0, portalCd - 1 / 60); const mis = MIS.on; tornado.visible = !mis; whirl.visible = !mis || MIS.id === 'M-3'; if (portalCd > 0.5) return; if (mis && MIS.id !== 'M-3') return; if (mis && dist2(P.x, P.z, UP.x, UP.z) < 70) return; if (dist2(P.x, P.z, vortex.x, vortex.y) < 85) travel(-1, vortex.x, vortex.y); else if (dist2(P.x, P.z, UP.x, UP.z) < 70) travel(1, UP.x, UP.z); }
 // торнадо вверх
 const tornadoMat = new THREE.ShaderMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide, uniforms: { uT: { value: 0 } }, vertexShader: 'varying vec2 vUv; uniform float uT; void main(){ vUv = uv; vec3 p = position; float k = (p.y + 450.0)/900.0; p.x += sin(k*5.0 + uT*1.3)*22.0*k; p.z += cos(k*4.0 + uT*1.1)*22.0*k; gl_Position = projectionMatrix*modelViewMatrix*vec4(p,1.0); }', fragmentShader: `uniform float uT; varying vec2 vUv; void main(){ float s = sin(vUv.x*31.416 + vUv.y*22.0 - uT*6.0); float s2 = sin(vUv.x*18.85 - vUv.y*9.0 - uT*3.0); float a = (0.55 + 0.35*s*s + 0.2*s2)*smoothstep(0.0,0.08,vUv.y)*smoothstep(1.0,0.45,vUv.y); gl_FragColor = vec4(mix(vec3(1.0,0.74,0.32), vec3(1.0,0.95,0.8), 0.5+0.5*s2)*1.7, clamp(a,0.0,0.95));
@@ -788,7 +804,7 @@ const dec = (k, dt) => { if (P[k] > 0) P[k] = Math.max(0, P[k] - dt); };
 function update(dt) {
   time += dt;
   // игрок
-  if (P.dead > 0) { P.dead -= dt; $('dead-t').textContent = Math.ceil(P.dead); if (P.dead <= 0) { P.dead = 0; P.hp = S.hp; [P.x, P.z] = MIS.cp(); P.speed = 0; P.dvx = 0; P.dvz = 0; P.second = false; ship.visible = true; $('dead').style.display = 'none'; for (const m of mobs) m.aggro = false; first = true; log('Корабль снова в строю'); } }
+  if (P.dead > 0) { P.dead -= dt; $('dead-t').textContent = Math.ceil(P.dead); if (P.dead <= 0) { P.dead = 0; P.hp = P.revive ? Math.round(S.hp * P.revive) : S.hp; if (!P.revive) { [P.x, P.z] = MIS.cp(); P.x += teamSlot() * 40; } P.revive = 0; P.speed = 0; P.dvx = 0; P.dvz = 0; P.second = false; ship.visible = true; $('dead').style.display = 'none'; for (const m of mobs) m.aggro = false; first = true; log('Корабль снова в строю'); } }
   else {
     for (const k of ['wind', 'buffW', 'buffA', 'cry', 'anchor', 'over', 'will', 'bots', 'gambit', 'dive', 'rapid', 'tail', 'burn', 'turbo', 'kit', 'fSpd', 'fArm', 'fDmg', 'wArm', 'wCd', 'wRep', 'mirror', 'bubble', 'shock', 'probe', 'bull', 'hex', 'sleep', 'ink', 'rot']) dec(k, dt);
     const sh = held('dash'); const turn = (sh || P.anchor > 0) ? 0 : (held('left') ? 1 : 0) - (held('right') ? 1 : 0); turnNow = turn;
@@ -810,6 +826,7 @@ function update(dt) {
     for (const m of mobs) if (!m.dead) { const d = dist2(P.x, P.z, m.x, m.z); const rr = m.r + 14; if (d < rr) { const nx = (P.x - m.x) / (d || 1), nz = (P.z - m.z) / (d || 1); if (m.T.cls === 2 || m.boss) { P.x = m.x + nx * rr; P.z = m.z + nz * rr; } else { m.x = P.x - nx * rr; m.z = P.z - nz * rr; }
         if (P.bull > 0 && !m.bullHit) { m.bullHit = time; hitMob(m, 160, 0, { color: '#A0522D' }); m.stun = 3; m.kx = -nx * 300; m.kz = -nz * 300; }
         else if (sp0 > 30 && P.hitCd <= 0) { const dm = sp0 * 0.2; if (has('F-02')) hitMob(m, 120, 0); else { damagePlayer(dm, 'Таран', 0, { raw: true }); hitMob(m, dm * 2.2, 0); } m.kx = -nx * sp0 * 1.5; m.kz = -nz * sp0 * 1.5; P.hitCd = 0.9; P.speed *= 0.5; if (P.flood > 0) flood(P.flood - 1); } } if (m.bullHit && time - m.bullHit > 1) m.bullHit = 0; }
+    if (NET.live) shipBump(sp0);
     // пассивный ремонт: 1 в секунду; вне боя (30 с без урона и эффектов) — 3 в секунду
     { const calm = time - (P.lastHit ?? -99) > (has('CREW-03') ? 20 : D.REPAIR.calmAfter); if (P.hp < S.hp) P.hp = Math.min(S.hp, P.hp + ((calm ? D.REPAIR.calm * (has('CREW-03') ? 1.5 : 1) : D.REPAIR.base) + (has('F-26') ? 1.5 : 0)) * dt); P.calm = calm; }
     checkPortals();
@@ -834,13 +851,14 @@ function update(dt) {
   const hidden = P.dive > 0 || zones.some(zn => zn.hide && dist2(P.x, P.z, zn.x, zn.z) < zn.r + 10); const decoy = zones.find(zn => zn.decoy && !zn.dead);
   // мобы
   leechN = 0; fogNear = false;
-  for (const m of mobs) {
-    if (m.dead) { if (m.fade !== 0) corpse(m, dt); if (m.gone) continue; if (m.respawn) { m.rt -= dt; if (m.rt <= 0 && m.fade === 0 && dist2(P.x, P.z, m.hx, m.hz) > 500) { m.dead = 0; m.hp = m.max; m.x = m.hx; m.z = m.hz; m.aggro = false; m.mesh.visible = true; m.mesh.rotation.z = 0; m.mesh.scale.setScalar(m.sc); m.lbl.firstChild.textContent = m.name; m.lbl.classList.remove('loot'); pauseModel(m.mesh, false); m.far = null; } } continue; }
+  if (NET.client) clientMobs(dt); else for (const m of mobs) {
+    if (m.dead) { if (m.fade !== 0) corpse(m, dt); if (m.gone) continue; if (m.respawn) { m.rt -= dt; if (m.rt <= 0 && m.fade === 0 && dist2(TP.x, TP.z, m.hx, m.hz) > 500) { m.dead = 0; m.hp = m.max; m.x = m.hx; m.z = m.hz; m.aggro = false; m.mesh.visible = true; m.mesh.rotation.z = 0; m.mesh.scale.setScalar(m.sc); m.lbl.firstChild.textContent = m.name; m.lbl.classList.remove('loot'); pauseModel(m.mesh, false); m.far = null; } } continue; }
+    TP = NET.live ? pickTarget(m) : P;
     const T = m.T, ai = T.ai; for (const k of ['stun', 'slow', 'mark', 'acid', 'blind', 'weak', 'noheal', 'open', 'shell']) if (m[k] > 0) m[k] -= dt;
     if (m.still) { if (m.burn > 0) { m.burn -= dt; m.bt -= dt; if (m.bt <= 0) { m.bt = 0.5; hitMob(m, 5, 3, { dot: true, color: '#FF4500' }); } } if (!m.dead) { m.mesh.position.set(m.x, PLANE + 10, m.z); m.aggro = false; } continue; }
     if (m.burn > 0) { m.burn -= dt; m.bt -= dt; if (m.bt <= 0) { m.bt = 0.5; hitMob(m, 5, 3, { dot: true, color: '#FF4500' }); if (m.dead) continue; } fire.emit({ x: m.x + (rnd() - 0.5) * m.r, y: PLANE + rnd() * m.r * 0.5, z: m.z + (rnd() - 0.5) * m.r, vy: 30, life: 0.5, s0: 12, s1: 3, r: 3, g: 1, b: 0.1, a: 0.9 }); }
-    const dx = P.x - m.x, dz = P.z - m.z; const d = Math.hypot(dx, dz); { const far = d > 1300, hm = !!m.mesh.userData.model; if (far !== m.far || hm !== m.hm) { m.far = far; m.hm = hm; pauseModel(m.mesh, far); } } const dm = m.dmgMul * (m.weak > 0 ? 0.8 : 1); const pd = { from: m }; if (T.sp === 'fog' && d < 420) fogNear = true; m.mesh.visible = !FOG.vis || d < FOG.vis + 40;
-    if (!SEE || (m.aggro && (P.dead || hidden || d > 1000))) m.aggro = false;
+    const dx = TP.x - m.x, dz = TP.z - m.z; const d = Math.hypot(dx, dz); { const far = d > 1300, hm = !!m.mesh.userData.model; if (far !== m.far || hm !== m.hm) { m.far = far; m.hm = hm; pauseModel(m.mesh, far); } } const dm = m.dmgMul * (m.weak > 0 ? 0.8 : 1); const pd = { from: m }; if (T.sp === 'fog' && d < 420) fogNear = true; m.mesh.visible = !FOG.vis || d < FOG.vis + 40;
+    if (!SEE || (m.aggro && (TP.dead || (TP === P ? hidden : TP.hide) || d > 1000))) m.aggro = false;
     let vx = 0, vz = 0, want = m.yaw; m.cd -= dt; m.cd2 -= dt; const spd = T.speed * (m.slow > 0 ? (m.boss ? 0.5 : 0.6) : 1);
     if (m.aggro && !m.boss && (!m.tgt || m.tgt.struct)) { if (m.tgt && (m.tgt.dead || m.tgt.hp <= 0)) m.tgt = null; m.zt = (m.zt || 0) - dt; if (m.zt <= 0) { m.zt = 1.5; let best = null, bd = Math.min(d, 280); for (const zn of zones) if (zn.struct && !zn.dead && !zn.decoy) { const q = Math.hypot(zn.x - m.x, zn.z - m.z); if (q < bd) { bd = q; best = zn; } } m.tgt = best; } }
     if (m.stun > 0) { m.lunge = 0; m.wind = 0; m.slam = 0; m.beam = 0; m.cast = 0; m.grab = 0; m.pull = 0; m.at = 0; }
@@ -851,17 +869,17 @@ function update(dt) {
       if (ov) { vx = ov[0]; vz = ov[1]; if (ov.length > 2) want = ov[2]; }
       else if (ai === 'none') { vx = -Math.sin(want) * spd; vz = -Math.cos(want) * spd; want += Math.PI; }
       else if (ai === 'bite') {                              // укус и бросок
-        if (m.lunge > 0) { m.lunge -= dt; vx = Math.sin(m.la) * spd * 3.2; vz = Math.cos(m.la) * spd * 3.2; want = m.la; fire.emit({ x: m.x, y: PLANE, z: m.z, life: 0.25, s0: 10, s1: 2, r: 2.2, g: 0.5, b: 1.6, a: 0.9 }); if (d < m.r + 22 && !m.bit) { damagePlayer(T.dmg * 2 * dm, m.name, T.atk, { from: m, melee: true }); m.bit = true; } }
+        if (m.lunge > 0) { m.lunge -= dt; vx = Math.sin(m.la) * spd * 3.2; vz = Math.cos(m.la) * spd * 3.2; want = m.la; fire.emit({ x: m.x, y: PLANE, z: m.z, life: 0.25, s0: 10, s1: 2, r: 2.2, g: 0.5, b: 1.6, a: 0.9 }); if (d < m.r + 22 && !m.bit) { hurt(T.dmg * 2 * dm, m.name, T.atk, { from: m, melee: true }); m.bit = true; } }
         else if (m.wind > 0) { m.wind -= dt; if (m.wind <= 0) { m.lunge = 0.55; m.la = want; m.bit = false; } }
-        else { const a = want + Math.sin(time * 2 + m.hx) * 0.5; const go = d > m.r + 24 ? 1 : 0; vx = Math.sin(a) * spd * go; vz = Math.cos(a) * spd * go; if (d < m.r + 30 && m.cd <= 0 && m.blind <= 0) { damagePlayer(T.dmg * 0.7 * dm, m.name, T.atk, { from: m, melee: true }); m.cd = 0.9; } if (d > 90 && d < 260 && m.cd2 <= 0) { m.wind = 0.5; m.cd2 = 5 + rnd() * 3; warnRing(m.x, m.z, m.r + 7, 0.5); } } }
+        else { const a = want + Math.sin(time * 2 + m.hx) * 0.5; const go = d > m.r + 24 ? 1 : 0; vx = Math.sin(a) * spd * go; vz = Math.cos(a) * spd * go; if (d < m.r + 30 && m.cd <= 0 && m.blind <= 0) { hurt(T.dmg * 0.7 * dm, m.name, T.atk, { from: m, melee: true }); m.cd = 0.9; } if (d > 90 && d < 260 && m.cd2 <= 0) { m.wind = 0.5; m.cd2 = 5 + rnd() * 3; warnRing(m.x, m.z, m.r + 7, 0.5); } } }
       else { const ideal = ai === 'shoot' ? 250 : ai === 'beam' ? 210 : 300; const radial = clamp((d - ideal) / 60, -1, 1); const sa = want + m.strafe * Math.PI / 2; vx = (Math.sin(want) * radial + Math.sin(sa) * 0.7) * spd; vz = (Math.cos(want) * radial + Math.cos(sa) * 0.7) * spd;
         if (ai === 'shoot' && d < 520 && m.cd <= 0) { m.n = (m.n || 0) + 1; if (m.n % 3 === 0) { for (let k = -2; k <= 2; k++) enemyShot(m, T.dmg * 0.8 * dm, 170, k * 0.17); m.cd = 3.4; } else { enemyShot(m, T.dmg * 1.05 * dm, 210, 0); m.cd = 2.4; } }
         if (ai === 'heavy') { const sr = 150 + m.r;                  // очередь, удар по площади, тяжёлая бомба
-          if (m.slam > 0) { m.slam -= dt; vx = 0; vz = 0; if (m.slam <= 0) { explosion(m.x, PLANE, m.z, 2.2, [2.6, 0.4, 1.2]); shockRing(m.x, m.z, sr, 0xff5a70); if (d < sr + 10) damagePlayer(T.dmg * dm, m.name + ': удар', T.atk, pd); if (T.sp === 'belly') m.open = 3; } }
+          if (m.slam > 0) { m.slam -= dt; vx = 0; vz = 0; if (m.slam <= 0) { explosion(m.x, PLANE, m.z, 2.2, [2.6, 0.4, 1.2]); shockRing(m.x, m.z, sr, 0xff5a70); if (d < sr + 10) hurt(T.dmg * dm, m.name + ': удар', T.atk, pd); if (T.sp === 'belly') m.open = 3; } }
           else if (d < sr - 25 && m.cd2 <= 0) { m.slam = 1.3; m.cd2 = 7; warnRing(m.x, m.z, sr, 1.3); }
           else if (d < 520 && m.cd <= 0) { m.n = (m.n || 0) + 1; if (m.n % 5 === 0) { enemyBomb(m, T.dmg * 0.85 * dm); m.cd = 3; } else { enemyShot(m, T.dmg * 0.45 * dm, 170, 0); m.burst++; if (m.burst >= 3) { m.burst = 0; m.cd = 4.2; } else m.cd = 0.35; } } }
         if (ai === 'beam') {                                 // молния, пока вы рядом
-          if (m.beam > 0) { m.beam -= dt; m.tick -= dt; if (d < 330 && m.tick <= 0) { m.tick = 0.3; bolt(m.x, m.z, P.x, P.z); if (m.blind <= 0) damagePlayer(T.dmg * 0.15 * dm, m.name, T.atk, pd); } }
+          if (m.beam > 0) { m.beam -= dt; m.tick -= dt; if (d < 330 && m.tick <= 0) { m.tick = 0.3; bolt(m.x, m.z, TP.x, TP.z); if (m.blind <= 0) hurt(T.dmg * 0.15 * dm, m.name, T.atk, pd); } }
           else if (d < 300 && m.cd <= 0) { m.beam = 1.8; m.tick = 0.45; m.cd = 5; warnRing(m.x, m.z, m.r + 26, 0.45); } } } }
     else { m.wt -= dt; if (m.wt <= 0) { m.wander = Math.atan2(m.hx - m.x, m.hz - m.z) + (rnd() - 0.5) * 2.4; m.wt = 2 + rnd() * 3; } const hd = dist2(m.x, m.z, m.hx, m.hz); const sp = hd > 90 ? spd * 0.5 : spd * 0.22; vx = Math.sin(m.wander) * sp; vz = Math.cos(m.wander) * sp; want = m.wander; m.lunge = 0; m.wind = 0; m.slam = 0; m.beam = 0; m.att = false; m.grab = 0; m.cast = 0; }
     m.x += (vx + m.kx) * dt; m.z += (vz + m.kz) * dt; const f = Math.exp(-2.2 * dt); m.kx *= f; m.kz *= f;
@@ -869,6 +887,7 @@ function update(dt) {
     let dy = want - m.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); { const tr = (T.sp === 'shield' ? 0.5 : 3) * dt; m.yaw += clamp(dy, -tr, tr) * (m.stun > 0 ? 0 : 1); }
     m.mesh.position.set(m.x, PLANE + Math.sin(time * 1.3 + m.hx) * 2.5 + (ai === 'heavy' && !m.boss ? -4 : 0) + (m.wind > 0 ? 6 : 0), m.z); m.mesh.rotation.y = m.yaw;
   }
+  TP = P;
   P.leech = leechN; updateFog(dt);
   updateShots(dt);
   for (let i = warns.length - 1; i >= 0; i--) { const w = warns[i]; w.t += dt; w.m.material.opacity = 0.35 + 0.55 * Math.abs(Math.sin(w.t * 14)); if (w.t >= w.dur) { scene.remove(w.m); warns.splice(i, 1); } }
@@ -894,13 +913,13 @@ function drawMap() { const c = mctx, Sz = 200, H = 100, wide = has('F-05') || P.
     else if (o.kind === 'tree') { c.beginPath(); c.moveTo(a, b - 5); c.lineTo(a + 4.5, b + 4); c.lineTo(a - 4.5, b + 4); c.closePath(); c.stroke(); }
     else if (o.kind === 'fish') { c.beginPath(); c.moveTo(a - 5, b); c.lineTo(a, b - 3); c.lineTo(a + 5, b); c.lineTo(a, b + 3); c.closePath(); c.stroke(); }
     else { c.globalAlpha = o.cd > 0 ? 0.35 : 1; c.fillStyle = '#' + SHELL_HEX[o.ci]; c.fillRect(a - 2, b - 2, 4, 4); c.globalAlpha = 1; } }
-  MIS.map(c, px);
+  MIS.map(c, px); NET.mapDraw(c, px);
   for (const m of mobs) if (m.dead && m.loot) { const [a, b] = px(m.x, m.z); if (Math.abs(a) > 104 || Math.abs(b) > 104) continue; c.fillStyle = '#ffd24a'; c.beginPath(); c.arc(a, b, 3, 0, 6.3); c.fill(); }
   for (const m of mobs) if (!m.dead) { const [a, b] = px(m.x, m.z); if (Math.abs(a) > 104 || Math.abs(b) > 104 || (FOG.vis && dist2(P.x, P.z, m.x, m.z) > FOG.vis)) continue; const s = m.boss ? 7 : m.T.cls === 2 ? 5 : 3.4; c.fillStyle = m.boss ? '#ffb030' : m.aggro ? '#ff3a2a' : '#b8473c'; c.beginPath(); c.moveTo(a, b - s); c.lineTo(a + s, b + s); c.lineTo(a - s, b + s); c.fill(); if (m === target) { c.strokeStyle = '#ffffff'; c.lineWidth = 1.5; c.strokeRect(a - 7, b - 7, 14, 14); } }
   c.save(); c.rotate(P.yaw); c.fillStyle = '#f2f2ee'; c.beginPath(); c.moveTo(0, -8); c.lineTo(5.5, 6); c.lineTo(0, 2.5); c.lineTo(-5.5, 6); c.closePath(); c.fill(); c.restore(); c.restore();
   c.fillStyle = '#6b7073'; for (const [x, y] of [[5, 5], [195, 5], [5, 195], [195, 195]]) { c.beginPath(); c.arc(x, y, 2.4, 0, 6.2832); c.fill(); }
   c.font = '700 10px ui-monospace, Menlo, Consolas, monospace'; c.fillStyle = '#9fb8a4'; c.textAlign = 'center'; c.fillText('С', 100, 12); c.fillText('Ю', 100, 196); c.textAlign = 'left'; c.fillText('З', 4, 104); c.textAlign = 'right'; c.fillText('В', 196, 104); c.textAlign = 'left'; c.fillStyle = '#5f7566'; c.fillText('ЯРУС ' + (tier > 0 ? '+' : '') + tier, 12, 196); }
-let uiT = 1;
+let uiT = 1; const NORENDER = /[?&]norender/.test(location.search);   // для проверки сети без видеокарты
 const BUFFS = [['calm', 'ремонт ×3'], ['fSpd', 'искрохвост: скорость +20 %'], ['fArm', 'панцирный карп: урон по вам −15 %'], ['fDmg', 'огнепёр: урон +15 %'], ['wArm', 'железное дерево: урон по вам −10 %'], ['wCd', 'смолистая сосна: перезарядка быстрее'], ['wRep', 'лунный клён: ремонт +2'], ['buffW', 'урон +20 %'], ['buffA', 'урон по вам −20 %'], ['wind', 'попутный ветер'], ['rapid', 'беглый огонь'], ['will', 'стальная воля'], ['tail', 'ветер'], ['burn', 'форсаж'], ['cry', 'боевой клич'], ['anchor', 'якорь'], ['gambit', 'гамбит'], ['dive', 'под облаками'], ['bots', 'бронеботы'], ['mirror', 'зеркало'], ['over', 'перегрузка'], ['probe', 'зонд'], ['hex', 'сглаз: управление наоборот'], ['sleep', 'сон'], ['ink', 'чернила'], ['rot', 'разъедание'], ['web', 'паутина: скорость −60 %'], ['leech', 'пиявки']];
 function render(dt) { MIS.render();
   { const k = P.diveK * P.diveK * (3 - 2 * P.diveK); ship.position.set(P.x, PLANE + Math.sin(time * 0.9) * 0.8 - 70 * k, P.z); ship.rotation.set(0, P.yaw, 0); ship.rotateZ(P.bank); ship.rotateX(0.5 * Math.sin(Math.PI * P.diveK) * (P.dive > 0 ? 1 : -1));
@@ -913,9 +932,10 @@ function render(dt) { MIS.render();
   sun.target.position.set(P.x, PLANE, P.z); sun.position.set(P.x, PLANE, P.z).addScaledVector(sunDir, 1800); cloud.position.set(camera.position.x, 0, camera.position.z); sky.position.copy(camera.position); cloudMat.uniforms.uTime.value = STILL ? 12 : time;
   // тени: пока корабль поворачивает или кренится, обновляем каждый кадр, иначе тень на корпусе отстаёт на кадр и рябит
   frameN++; renderer.shadowMap.needsUpdate = (frameN & 1) === 0 || frameN < 3 || turnNow !== 0 || Math.abs(P.bank) > 0.01 || P.dashT > 0;
-  renderer.render(scene, camera);
+  if (!NORENDER) renderer.render(scene, camera);
   if (window.__want) { window.__shot = canvas.toDataURL('image/jpeg', 0.9); window.__want = false; }
   // подписи
+  if (NET.role) NET.drawGhostLabels();
   if (!P.dead) { place(meLbl, P.x, PLANE + 26, P.z); meLbl.querySelector('i').style.width = (P.hp / S.hp * 100) + '%'; } else meLbl.style.display = 'none';
   for (const m of mobs) { if (m.dead) { if (m.loot && m.fade < 0 && dist2(P.x, P.z, m.x, m.z) < 700) place(m.lbl, m.x, PLANE + m.r + 6, m.z); else m.lbl.style.display = 'none'; continue; } if (dist2(P.x, P.z, m.x, m.z) > (FOG.vis || 1100)) { m.lbl.style.display = 'none'; continue; } if (place(m.lbl, m.x, PLANE + m.r + 10, m.z)) { m.lbl.querySelector('i').style.width = Math.max(0, m.hp / m.max * 100) + '%'; m.lbl.style.color = m === target ? '#ffd24a' : m.aggro ? '#ff9c8a' : m.boss ? '#ffcf8a' : '#ffffff'; } }
   for (const o of objects) { const d = dist2(P.x, P.z, o.x, o.z); if (o.kind === 'fish' || o.kind === 'shell') o.g.visible = !o.off && (!FOG.vis || d < FOG.vis + 60); if (o.off || (o.kind === 'island' ? d > o.r : d > 380) || (FOG.vis && d > FOG.vis && !(o.kind === 'beacon' && o.lit))) { o.lbl.style.display = 'none'; continue; } place(o.lbl, o.x, o.kind === 'tree' ? 250 : o.kind === 'beacon' ? 125 : o.kind === 'island' ? o.il.y + 120 : PLANE + 30, o.z); }
@@ -958,17 +978,207 @@ function warm() { try { renderer.compile(scene, camera); const q = camera.quater
 const RATE = { wood: 0.1, fish: 0.15, pearls: 0.5 }, RES_RU = { wood: 'древесина', fish: 'рыба', pearls: 'жемчуг' };
 function sellAll() { let g = 0; const parts = []; for (const k in RATE) { const n = res[k] || 0; if (n <= 0) continue; const v = Math.round(n * RATE[k] * 100) / 100; g += v; parts.push(`${RES_RU[k]} ${n} → ${fmt(v)}`); res[k] = 0; } if (!g) return; res.gold += g; hudRes(); floatText('+' + fmt(g) + ' золота', '#ffd24a', P.x, PLANE + 30, P.z); return `Лавочник скупил припасы: ${parts.join(', ')} золота`; }
 function resetRun() { for (const o of objects) if (o.kind === 'island') { o.searched = false; o.cd = 0; } res.gold = 0; for (const k of ['hex', 'sleep', 'ink', 'rot', 'lost']) P[k] = 0; while (webs.length) scene.remove(webs.pop().m); for (const k in LUCK) Object.assign(LUCK[k], { n: 0, at: 0, bag: [] }); shop.open = false; for (const k in shop.lv) shop.lv[k] = 0; for (const k of ['buffW', 'buffA', 'wind', 'fSpd', 'fArm', 'fDmg', 'wArm', 'wCd', 'wRep']) P[k] = 0; for (const q of slots) q.cd = 0; recompute(false); hudRes(); }
-const MIS = initMission({ THREE, D, P, S, res, mobs, objects, scene, PLANE, BLD, BM, camera, vortex, fire, KEY, keyName, fmt, freeSpot, spawnMob, removeMob, clearMobs, spawnStart, addObjLabel, enemyShot, warnRing, log, story, explosion, damagePlayer, shockRing, burst, heal, coin, resetRun, setWorld, islet, dropObst, makePond, makeTreeSpot, loadModel, obstacles, segD, kill() { if (!P.dead) die(); }, showShop() { if (!STILL) openHangar(); }, setFog, fogLights: FOG.lights, fogVis: () => FOG.vis, zones, sleep: sleepNow, ROCKS, addObst(x, z, r, life) { const o = { x, z, rad: () => r, life }; obstacles.push(o); return o; },
+// ---------- сетевая игра: склейка с net.js ----------
+// TP — капитан, по которому сейчас действует моб (свой корабль или прокси союзника). ACTOR — кто нажал действие у точки миссии
+let TP = P, ACTOR = null, bumpT = -9, respT = -99, worldIdSent = null;
+function teamPlayers(alive) { const a = []; if (!alive || !P.dead) a.push(P); for (const g of NET.ghosts.values()) if (!alive || !g.dead) a.push(g.proxy); return a; }
+function hurtP(tp, dmg, why, type = 0, o = {}) { if (!tp || tp === P) return damagePlayer(dmg, why, type, o); if (tp.dead || tp.dive > 0) return; NET.tell(tp.id, 'hurt', [Math.round(dmg * 10) / 10, why, type, o.raw ? 1 : 0, o.melee ? 1 : 0, (o.from && o.from.nid) || 0]); }
+function hurt(dmg, why, type, o) { return hurtP(TP, dmg, why, type, o); }
+function tlogP(tp, text, color) { if (!tp || tp === P) log(text, color); else NET.tell(tp.id, 'log', [text, color]); }
+function tlog(text, color) { tlogP(TP, text, color); }
+function tsleep(tp, t) { if (!tp || tp === P) sleepNow(t); else NET.tell(tp.id, 'sleep', t); }
+// цель моба: ближайший живой капитан. К тому, в кого он вцепился (пиявка, клещ, сглаз, магнит), моб держится до конца приёма
+function pickTarget(m) { const cur = m.tid === 'H' ? P : m.tid && NET.ghosts.get(m.tid) ? NET.ghosts.get(m.tid).proxy : null;
+  if (cur && !cur.dead && (m.att || m.grab > 0 || m.cast > 0 || m.pull > 0)) return cur;
+  let best = null, bd = 1e9; for (const q of teamPlayers(true)) { const d = dist2(q.x, q.z, m.x, m.z) - (q === cur ? 80 : 0); if (d < bd) { bd = d; best = q; } }
+  if (!best) return P; m.tid = best === P ? 'H' : best.id; return best; }
+const teamSlot = () => { const i = NET.lobby.findIndex(q => q.id === NET.id); return i > 0 ? (i % 2 ? 1 : -1) * Math.ceil(i / 2) : 0; };
+const waitRevive = () => NET.live && MIS.on && !MIS.busy;
+const objRef = o => o.wid != null ? 'w' + o.wid : 'n' + o.nid;
+const objByRef = r => r[0] === 'w' ? objects.find(o => o.wid === +r.slice(1)) : objects.find(o => o.nid === +r.slice(1));
+const inShield = () => zones.some(zn => zn.shield && dist2(P.x, P.z, zn.x, zn.z) < zn.r);
+const hiddenMe = () => P.dive > 0 || zones.some(zn => zn.hide && dist2(P.x, P.z, zn.x, zn.z) < zn.r + 10);
+function unObj(o) { const i = objects.indexOf(o); if (i >= 0) objects.splice(i, 1); if (o.lbl) o.lbl.remove(); if (channel && channel.o === o) channel = null; }
+// корабли капитанов не проходят друг сквозь друга; толчок на ходу будит уснувшего, смывает воду «Потопа» и выталкивает из корней
+function shipBump(sp0) { for (const g of NET.ghosts.values()) { if (g.dead || g.dive > 0 || P.dive > 0) continue; const d = dist2(P.x, P.z, g.x, g.z); if (d > 30 || d < 0.01) continue; const nx = (P.x - g.x) / d, nz = (P.z - g.z) / d; P.x = g.x + nx * 30; P.z = g.z + nz * 30;
+    if (sp0 > 15 && time - bumpT > 0.6) { bumpT = time; const f = Math.min(260, sp0 * 1.6); NET.toPeer(g.id, 'nudge', [-nx * f, -nz * f]); } } }
+// сбитый союзник: у обломков можно поднять его, держа действие 10 секунд (с навыком «Подъём» — 4). Стоит пятую часть своей прочности
+function ghostDead(g) { if (g.dead) { if (NET.host) MIS.onDeath(); if (g.obj) unObj(g.obj); g.obj = { kind: 'mis', ally: g.id, x: g.x, z: g.z, r: 80, cd: 0, dur: 10, prompt: 'поднять союзника: ' + g.nick, text: 'Поднимаем союзника', onDone() { revive(g); } }; addObjLabel(g.obj, 'Сбит: ' + g.nick); objects.push(g.obj); }
+  else if (g.obj) { unObj(g.obj); g.obj = null; } }
+function revive(g) { if (!g.dead) return; const cost = Math.round(S.hp * 0.2 * (has('CREW-06') ? 0.5 : 1)); P.hp = Math.max(1, P.hp - cost); P.lastHit = time; floatText('-' + cost, '#ff7a66', P.x, PLANE + 22, P.z); NET.toPeer(g.id, 'revive', 0.3); log(`${g.nick} поднят. Это стоило ${cost} прочности`, '#63dcb4'); burst(g.x, g.z, 60, '#98FB98', 20); }
+function respawnAll() { if (time - respT < 6) return; respT = time; const t = 'Сбиты все: команда возвращается у последней отметки'; if (P.dead) { P.revive = 0; P.dead = 0.001; } for (const g of NET.ghosts.values()) NET.tell(g.id, 'respawn', 1); log(t, '#ffb4a0'); NET.bcast('log', [t, '#ffb4a0']); }
+// навыки, которым нужен союзник
+function netSkill(id, col) { const near = (dead, R) => { let b = null, bd = R; for (const g of NET.ghosts.values()) { if (!!g.dead !== dead) continue; const d = dist2(P.x, P.z, g.x, g.z); if (d < bd) { bd = d; b = g; } } return b; };
+  if (id === 'S-08') { const g = near(true, 250); if (!g || !g.obj) { log('Подъём: рядом нет сбитых союзников'); return false; } channel = { o: g.obj, t: 0, dur: 4, text: 'Поднимаем союзника' }; return true; }
+  const g = near(false, id === 'S-07' ? 300 : 250); if (!g) { log(`${D.SKILLS[id].name}: рядом нет союзников`); return false; }
+  const [give, cost] = id === 'S-07' ? [120, 40] : [100, 100]; P.hp = Math.max(1, P.hp - cost); bolt(P.x, P.z, g.x, g.z, col, 6, 1.4); burst(g.x, g.z, 40, col, 14); NET.toPeer(g.id, 'xfer', give); log(`${D.SKILLS[id].name}: ${g.nick} +${give} прочности`, txt(col)); return true; }
+// --- ведущий ---
+function netHit([nid, dmg, type, crit, dot, melt], from) { const m = NET.byNid.get(nid); if (!m || m.dead) return; let k = 1; if (m.boss && MIS.bossBright()) k *= 1.15; if (m.boss && MIS.bossDim()) k *= 0.5;
+  if (melt && m.shell > 0) { m.shell = 0; burst(m.x, m.z, m.r + 30, '#ffb030', 24); log('Огонь растопил смоляной панцирь', '#ffe08a'); }
+  m.hp -= Math.max(1, Math.round(dmg * k)); if (SEE) m.aggro = true; if (m.hp <= 0) killMob(m, true); }
+function netReq(t, d, from) { const g = NET.ghosts.get(from), gp = g && g.proxy;
+  switch (t) {
+    case 'spawn': { const [id, x, z, o] = d; if (D.MOBS[id] || D.BOSSES[id]) spawnMob(id, x, z, Object.assign({}, o || {}, { net: false })); return; }
+    case 'act': case 'actStart': { const o = objects.find(q => q.pid === d); if (!o) return; ACTOR = gp; try { if (t === 'act') o.onDone(); else if (o.onStart) o.onStart(); } finally { ACTOR = null; } return; }
+    case 'search': { const o = objects.find(q => q.wid === d); if (!o) return; if (o.searched) return NET.tell(from, 'log', ['Этот остров уже обыскан: второй раз обыскать нельзя']); o.searched = true; o.cd = 150; NET.bcast('searched', d);
+      let ms; ACTOR = gp; try { ms = MIS.onSearch(o); } finally { ACTOR = null; } if (ms) NET.tell(from, 'story', [ms[0], ms[1], '#ffe08a']); else NET.tell(from, 'searchGo', d); return; }
+    case 'gather': { const o = objByRef(d[0]); if (!o) return; ACTOR = gp; try { MIS.onGather(o); if (d[1]) { const cp = MIS.onCatch(o); if (cp) NET.tell(from, 'compass', cp); } } finally { ACTOR = null; } return; }
+    case 'gold': if (!shop.open && d > 0 && d < 300) { res.gold += d; hudRes(); } return;
+    case 'travel': return travel(d[0], d[1], d[2]);
+    case 'dash': for (const m of mobs) if (m.att && m.tid === from) { m.att = false; m.cd = 1.5; } return;
+    case 'ok': if (modalCur && modalCur.mid === d) modalAck(modalCur, from); return;
+    case 'pause': return setPause(!!d);
+  } }
+let hsLast = {}; const mfire = [], REC = new Set(), OBST = []; let pidC = 0, recC = 0, oidC = 0;
+function hostState() { const send = (k, v) => { const j = JSON.stringify(v); if (hsLast[k] !== j) { hsLast[k] = j; NET.bcast(k, v); } };
+  send('world', { w: worldId, fog: [FOG.want, FOG.col.r, FOG.col.g, FOG.col.b].map(v => Math.round(v * 1000) / 1000), look: tierLook, tier, v: [Math.round(vortex.x), Math.round(vortex.y), Math.round(vortex.z)], lights: FOG.lights.map(l => [Math.round(l.x), Math.round(l.z), Math.round(l.r), l.x2 == null ? null : Math.round(l.x2), l.z2 == null ? null : Math.round(l.z2), l.cr || 0]) });
+  send('mis', MIS.netExport());
+  send('pts', objects.filter(o => o.kind === 'mis' && o.pid).map(o => [o.pid, Math.round(o.x), Math.round(o.z), o.r, o.dur, o.label, o.prompt, o.text, o.cd > 0 ? Math.round(o.cd) : 0, o.onStart ? 1 : 0]));
+  for (const o of [...REC]) if (!objects.includes(o)) REC.delete(o); send('recs', [...REC].map(o => [o.nid, ...o.rec, o.mis ? 1 : 0, o.boss ? 1 : 0]));
+  send('obst', OBST.filter(o => obstacles.includes(o)).map(o => [o.oid, Math.round(o.x), Math.round(o.z), o.r, o.life]));
+  if (mfire.length) NET.bcast('fx', ['pemit', [mfire.splice(0)]]);
+  if (MIS.on && !MIS.busy && P.dead && NET.players().length && NET.players().every(g => g.dead)) respawnAll(); }
+function lateJoin(id) { NET.tell(id, 'launch', { mission: MIS.on ? MIS.id : 'M-0', late: true }); NET.tell(id, 'tp', [P.x + 50, P.z + 30]); NET.fullMobs(id); NET.repFullTo(id); for (const o of objects) if (o.kind === 'island' && o.searched) NET.tell(id, 'searched', o.wid); hsLast = {}; }
+// миссия у ведущего: всё, что она делает с миром, расходится по команде
+const mscene = { add(...o) { scene.add(...o); for (const x of o) NET.repAdd(x); return mscene; }, remove(...o) { scene.remove(...o); for (const x of o) NET.repRemove(x); return mscene; } };
+function missionNet() { return {
+  scene: mscene, realScene: scene,
+  fire: { emit(o) { fire.emit(o); if (NET.live && !MIS.busy && mfire.length < 300) mfire.push([o.x, o.y, o.z, o.vx || 0, o.vy || 0, o.vz || 0, o.life, o.s0, o.s1, o.r, o.g, o.b, o.a, o.drag || 0].map(v => Math.round(v * 10) / 10)); } },
+  log(t, col) { log(t, col); NET.bcast('log', [t, col]); }, story(a, b, col) { story(a, b, col); NET.bcast('story', [a, b, col]); },
+  heal(n) { if (ACTOR && ACTOR !== P) NET.tell(ACTOR.id, 'heal', n); else heal(n); },
+  kill(p) { p = p || P; if (p === P) { if (!P.dead) die(); } else NET.tell(p.id, 'kill', 1); },
+  sleep(t, p) { tsleep(p || P, t); }, hurtP, tlogP, players: teamPlayers, actor: () => ACTOR || P, pid: () => ++pidC, teamSize: () => NET.size(),
+  near: (x, z, r) => teamPlayers(true).some(p => dist2(p.x, p.z, x, z) < r),
+  focus(x, z) { let b = null, bd = 1e9; for (const p of teamPlayers(true)) { const d = dist2(p.x, p.z, x, z); if (d < bd) { bd = d; b = p; } } return b || P; },
+  area(x, z, r, fn) { for (const p of teamPlayers(true)) if (dist2(p.x, p.z, x, z) < r) fn(p); },
+  teleportAll(x, z) { P.x = x; P.z = z; P.speed = 0; P.dvx = 0; P.dvz = 0; first = true; let i = 0; for (const g of NET.ghosts.values()) { i++; NET.tell(g.id, 'tp', [x + (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 45, z]); } },
+  makePond(x, z) { const o = makePond(x, z); o.nid = ++recC; o.rec = ['fish', Math.round(x), Math.round(z)]; REC.add(o); return o; },
+  makeTreeSpot(x, z, model, life) { const o = makeTreeSpot(x, z, model, life); o.nid = ++recC; o.rec = ['tree', Math.round(x), Math.round(z), model, life || 'stage']; REC.add(o); return o; },
+  addObst(x, z, r, life) { const o = { x, z, r, rad: () => r, life, oid: ++oidC }; obstacles.push(o); OBST.push(o); return o; },
+  openShop(v) { if (!v) { NET.bcast('shopClose', 1); shop.open = false; for (const k in shop.lv) shop.lv[k] = 0; recompute(false); return; } const n = NET.size(), chest = res.gold, share = Math.floor(chest / n * 100) / 100; NET.bcast('shop', [chest, n, share]); return shopOpen(chest, n, share); },
+  nicks: () => NET.nicks(), bcast: (t, d) => NET.bcast(t, d),
+  toMenu() { if (NET.host && NET.live) { NET.bcast('end', 1); } NET.inGame = false; NET.sendMe(); hangarOpen = true; keys.clear(); hangar.start(); } }; }
+function shopOpen(chest, n, share) { shop.open = true; res.team = chest; res.gold = share; const sold = sellAll(); hudRes(); return [sold, `Золото команды (${fmt(chest)}) поделено поровну на ${n === 1 ? 'одного капитана' : n + ' капитанов'}: у каждого ${fmt(share)}. Своё золото можно передать другому капитану в лавке`].filter(Boolean).join('. '); }
+// --- гость ---
+function netSpawn([nid, id, x, z, name, sc, max, fl, hp]) { if (NET.byNid.has(nid) || !(D.MOBS[id] || D.BOSSES[id])) return; const m = spawnMob(id, x, z, { net: true, name, scale: sc, respawn: !!(fl & 8), added: !!(fl & 16) });
+  m.nid = nid; NET.byNid.set(nid, m); m.max = max; m.hp = hp; m.mis = !!(fl & 1); m.still = !!(fl & 2); m.kid = !!(fl & 4); m.nx = x; m.nz = z; m.nyaw = m.yaw; m._net = {}; }
+function netMobs(list) { for (const [nid, x, z, yaw, hp, fl, st, max] of list) { const m = NET.byNid.get(nid); if (!m) continue; m.nx = x; m.nz = z; m.nyaw = yaw; m.hp = hp; m.max = max; m.aggro = !!(fl & 2); m.nwind = !!(fl & 32); m.nvis = !!(fl & 16); m.still = !!(fl & 64); m._net = m._net || {};
+    for (const k of NET.ST) { m[k] = st[k] || 0; m._net[k] = m[k]; }
+    const dead = !!(fl & 1); if (dead && !m.dead) NET.quiet(() => clientKill(m, !!(fl & 4))); else if (!dead && m.dead) clientRevive(m);
+    if (m.dead) { if (!(fl & 4) && m.loot) { m.loot = null; m.lbl.firstChild.textContent = ''; } if ((fl & 8) && m.fade < 0) m.fade = 0.5; } } }
+function clientKill(m, loot) { m.dead = 1; m.x = m.nx; m.z = m.nz; explosion(m.x, PLANE, m.z, m.boss ? 1.6 : m.T.cls === 2 ? 1.1 : 0.6); m.loot = loot ? ['bronze', 1] : null; m.ct = 0; m.fade = -1; m.cside = rnd() < 0.5 ? 1 : -1; m.cy = m.mesh.position.y; pauseModel(m.mesh, true); m.far = null;
+  m.lbl.firstChild.textContent = loot ? 'Добыча: пролетите над телом' : ''; m.lbl.classList.add('loot'); if (target === m) target = null; }
+function clientRevive(m) { m.dead = 0; m.fade = -1; m.loot = null; m.x = m.nx; m.z = m.nz; m.mesh.visible = true; m.mesh.rotation.z = 0; m.mesh.scale.setScalar(m.sc); m.lbl.firstChild.textContent = m.name; m.lbl.classList.remove('loot'); pauseModel(m.mesh, false); m.far = null; }
+// мобы у гостя: положение и состояние приходят от ведущего, здесь только плавное движение и отрисовка
+function clientMobs(dt) { const kk = 1 - Math.exp(-9 * dt);
+  for (const m of mobs) { if (m.dead) { if (m.fade !== 0) corpse(m, dt); continue; }
+    for (const k of NET.ST) if (m[k] > 0) m[k] = Math.max(0, m[k] - dt); if (m._net) for (const k in m._net) m._net[k] -= dt;
+    if (m.nx == null) { m.nx = m.x; m.nz = m.z; m.nyaw = m.yaw; }
+    if (Math.hypot(m.nx - m.x, m.nz - m.z) > 400) { m.x = m.nx; m.z = m.nz; } else { m.x += (m.nx - m.x) * kk; m.z += (m.nz - m.z) * kk; }
+    let dy = m.nyaw - m.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); m.yaw += dy * kk;
+    const d = dist2(P.x, P.z, m.x, m.z); if (m.T.sp === 'fog' && d < 420) fogNear = true; m.mesh.visible = m.nvis !== false && (!FOG.vis || d < FOG.vis + 40);
+    { const far = d > 1300, hm = !!m.mesh.userData.model; if (far !== m.far || hm !== m.hm) { m.far = far; m.hm = hm; pauseModel(m.mesh, far); } }
+    if (m.burn > 0 && rnd() < 0.5) fire.emit({ x: m.x + (rnd() - 0.5) * m.r, y: PLANE + rnd() * m.r * 0.5, z: m.z + (rnd() - 0.5) * m.r, vy: 30, life: 0.5, s0: 12, s1: 3, r: 3, g: 1, b: 0.1, a: 0.9 });
+    m.mesh.position.set(m.x, PLANE + (m.still ? 10 : Math.sin(time * 1.3 + m.hx) * 2.5 + (m.T.ai === 'heavy' && !m.boss ? -4 : 0) + (m.nwind ? 6 : 0)), m.z); m.mesh.rotation.y = m.yaw; } }
+// гость сам наложил на моба оглушение, замедление и т. п. или отбросил его — сообщаем ведущему
+function clientDiff() { for (const m of mobs) { if (!m.nid || m.dead) continue; const b = m._net || (m._net = {});
+    for (const k of NET.ST) { if (k === 'shell') continue; const v = m[k] || 0; if (v > (b[k] || 0) + 0.15) { NET.req('mst', [m.nid, k, Math.round(v * 10) / 10]); b[k] = v; } }
+    if (Math.hypot(m.kx || 0, m.kz || 0) > 30) NET.req('mk', [m.nid, Math.round(m.kx), Math.round(m.kz)]); m.kx = 0; m.kz = 0; } }
+const netPts = new Map(), netRecs = new Map(), netObst = new Map();
+function syncPoints(list) { const seen = new Set(); for (const [pid, x, z, r, dur, label, prompt, text, cd, st] of list) { seen.add(pid); let o = netPts.get(pid);
+    if (!o) { o = { kind: 'mis', pid, onStart() { if (this.st) NET.req('actStart', pid); }, onDone() { NET.req('act', pid); } }; addObjLabel(o, label); o.label = label; objects.push(o); netPts.set(pid, o); }
+    Object.assign(o, { x, z, r, dur, prompt, text, st }); if (cd > o.cd + 1) o.cd = cd; if (o.label !== label) { o.label = label; o.lbl.firstChild.textContent = label; } }
+  for (const [pid, o] of netPts) if (!seen.has(pid)) { unObj(o); netPts.delete(pid); } }
+function syncRecs(list) { const seen = new Set(); for (const [nid, kind, x, z, model, life, mis, boss] of list.map(r => r[1] === 'fish' ? [r[0], r[1], r[2], r[3], null, null, r[4], r[5]] : r)) { seen.add(nid); if (netRecs.has(nid)) continue;
+    const o = kind === 'fish' ? makePond(x, z) : makeTreeSpot(x, z, model, life); o.nid = nid; o.mis = !!mis; o.boss = !!boss; netRecs.set(nid, o); }
+  for (const [nid, o] of netRecs) if (!seen.has(nid)) { scene.remove(o.g); unObj(o); netRecs.delete(nid); } }
+function syncObst(list) { const seen = new Set(); for (const [oid, x, z, r, life] of list) { seen.add(oid); let o = netObst.get(oid); if (!o) { o = { x, z, rad: () => r, life }; obstacles.push(o); netObst.set(oid, o); } o.x = x; o.z = z; }
+  for (const [oid, o] of netObst) if (!seen.has(oid)) { const i = obstacles.indexOf(o); if (i >= 0) obstacles.splice(i, 1); netObst.delete(oid); } }
+function applyWorld(d) { if (d.w !== worldId) setWorld(d.w); setFog(d.fog[0], d.fog.slice(1)); setTierLook(d.look); if (d.tier !== tier) NET.quiet(() => setTier(d.tier)); vortex.set(d.v[0], d.v[1], d.v[2]);
+  FOG.lights.length = 0; for (const [x, z, r, x2, z2, cr] of d.lights) { const q = { x, z, r, keep: true }; if (x2 != null) { q.x2 = x2; q.z2 = z2; } if (cr) q.cr = cr; FOG.lights.push(q); } }
+function netMsg(t, d) { switch (t) {
+  case 'hurt': return damagePlayer(d[0], d[1], d[2], { raw: !!d[3], melee: !!d[4], from: NET.byNid.get(d[5]) });
+  case 'log': return log(d[0], d[1]);
+  case 'story': return story(d[0], d[1], d[2]);
+  case 'sleep': return sleepNow(d);
+  case 'kill': if (!P.dead) die(); return;
+  case 'heal': return heal(d);
+  case 'jam': { const ws = slots.filter(q => q.kind === 'w'), q = ws[(rnd() * ws.length) | 0]; if (q) { q.cd = Math.max(q.cd, 8); log(`Глушитель: ${q.name} молчит восемь секунд`, '#ffe08a'); } return; }
+  case 'pset': for (const k in d) { if (k === 'dvx' || k === 'dvz') P[k] += d[k]; else P[k] = d[k]; } return;
+  case 'loot': { const [k, n, v] = d; lootToast(k, n, v); floatText(`+${n} ${COIN_N[k][0]} (${fmt(v)})`, COIN_N[k][1], P.x, PLANE + 30, P.z); return; }
+  case 'compass': return later(3.2, () => { $('loot').innerHTML = `<img src="${LOOT.compass}" alt="" width="56" height="56"><div><b>Рыба-компас</b><span>${d}</span></div>`; $('loot').style.display = 'flex'; lootT = 3.5; });
+  case 'searchGo': { const o = objects.find(q => q.wid === d); if (o) searchRest(o); return; }
+  case 'searched': { const o = objects.find(q => q.wid === d); if (o) o.searched = true; return; }
+  case 'tier': return NET.quiet(() => setTier(d));
+  case 'travel': return NET.quiet(() => travel(d[0], d[1], d[2]));
+  case 'goTier': return NET.quiet(() => goTier(d[0], d[1], d[2]));
+  case 'pause': return setPause(!!d, true);
+  case 'modal': return modal(d[1], d[2], d[3], null, d[0]);
+  case 'mclose': return modalClose(d);
+  case 'launch': return netLaunch(d);
+  case 'end': return netEnd();
+  case 'shop': { const tx = shopOpen(d[0], d[1], d[2]); story(tx, 'Лавка открыта', '#ffd24a'); if (!STILL) openHangar(); return; }
+  case 'shopClose': shop.open = false; for (const k in shop.lv) shop.lv[k] = 0; recompute(false); return;
+  case 'fin': return MIS.netFin(d);
+  case 'mis': return MIS.netState(d);
+  case 'pts': return syncPoints(d);
+  case 'recs': return syncRecs(d);
+  case 'world': return applyWorld(d);
+  case 'dropObst': return dropObst(d);
+  case 'obst': return syncObst(d);
+  case 'respawn': if (P.dead) { P.revive = 0; P.dead = 0.001; } return;
+  case 'tp': P.x = d[0]; P.z = d[1]; P.speed = 0; P.dvx = 0; P.dvz = 0; first = true; return;
+} }
+function netPeer(from, t, d) { const g = NET.ghosts.get(from), nick = g ? g.nick : 'Союзник';
+  if (t === 'nudge') { if (P.dead) return; P.dvx += d[0]; P.dvz += d[1]; if (P.rooted > 0) { P.x += d[0] * 0.12; P.z += d[1] * 0.12; } if (P.sleep > 0) { P.sleep = 0; log(`${nick} разбудил корабль толчком`, '#d8f07a'); } if (P.flood > 0) flood(P.flood - 1); return; }
+  if (t === 'revive') { if (!P.dead) return; P.revive = d; P.dead = 0.001; log(`${nick} поднял ваш корабль`, '#63dcb4'); return; }
+  if (t === 'xfer') { heal(d); log(`${nick}: +${d} прочности`, '#7FFFD4'); return; }
+  if (t === 'imp') { P.dvx += d[0]; P.dvz += d[1]; return; }
+  if (t === 'gift') { res.gold += d; hudRes(); log(`${nick} передал вам ${fmt(d)} золота`, '#ffd24a'); } }
+function clientPrep(id) { L.mission = id; NET.inGame = true; MIS.end(true); NET.repReset(); clearMobs(); NET.byNid.clear(); resetRun();
+  for (const o of netPts.values()) unObj(o); netPts.clear(); for (const o of netRecs.values()) { scene.remove(o.g); unObj(o); } netRecs.clear(); for (const o of netObst.values()) { const i = obstacles.indexOf(o); if (i >= 0) obstacles.splice(i, 1); } netObst.clear();
+  const mis = id && id !== 'M-0'; setWorld(mis ? id : null); SEE = mis; FOG.lights.length = 0; setFog(0); setTierLook(null); if (tier !== 0) NET.quiet(() => setTier(0));
+  P.x = teamSlot() * 60; P.z = 0; P.yaw = 0.6; P.speed = 0; P.dvx = 0; P.dvz = 0; P.hp = S.hp; P.dead = 0; P.revive = 0; P.lost = 0; ship.visible = true; $('dead').style.display = 'none'; first = true; MIS.mirror(mis ? id : null); NET.sendMe(); }
+function netLaunch(d) { if (!NET.client) return; L.mission = d.mission; if (D.MISSIONS[d.mission] && D.MISSIONS[d.mission].stage) L.stage = D.MISSIONS[d.mission].stage; recompute(true); clientPrep(d.mission); hangar.netGo(!!d.late); }
+function netEnd() { NET.inGame = false; MIS.end(true); modalQ.length = 0; modalCur = null; nextModal(); NET.sendMe(); hangarOpen = true; keys.clear(); hangar.start(); }
+function fxPlay(name, a) { switch (name) {
+  case 'explosion': return explosion(...a); case 'shockRing': return shockRing(...a); case 'warnRing': return warnRing(...a); case 'bolt': return bolt(...a); case 'burst': return burst(...a); case 'addWeb': return addWeb(...a);
+  case 'zone': return zone(Object.assign({}, a[0]));
+  case 'eShotVis': return eShotVis(a[0], a[1], a[2], a[3], true, null, 0);
+  case 'eBombVis': return eBombVis(a[0], a[1], a[2], a[3], true, null, 0);
+  case 'rockVis': return fireRocket(NET.byNid.get(a[0]) || null, 0, a[1], a[2], a[3], a[4], true);
+  case 'mortVis': return fireMortar(a[0], a[1], 0, a[2], a[3], a[4], a[5], a[6], true);
+  case 'cannVis': { const t = NET.byNid.get(a[0]); if (!t) return; const [x, z, yaw] = [a[1], a[2], a[3]], col = D.WEAPONS['W-1'].color, g = glow(col); const side = Math.sign(Math.sin(Math.atan2(t.x - x, t.z - z) - yaw)) || 1, rx = Math.cos(yaw) * side, rz = -Math.sin(yaw) * side;
+    for (let i = 0; i < 4; i++) { const off = (i - 1.5) * 7, sx = x + rx * 9 + Math.sin(yaw) * off, sz = z + rz * 9 + Math.cos(yaw) * off, d = Math.hypot(t.x - sx, t.z - sz), ang = Math.atan2(t.x - sx, t.z - sz); const mesh = new THREE.Mesh(shellGeo, flat(col)); scene.add(mesh);
+      shots.push({ kind: 'shell', vis: true, mesh, g, col, x: sx, y: PLANE + 4, z: sz, vx: Math.sin(ang) * 560, vz: Math.cos(ang) * 560, life: d / 560, hit: true, t, dmg: 0, delay: i * 0.07 }); fire.emit({ x: sx, y: PLANE + 4, z: sz, life: 0.16, s0: 14, s1: 48, r: g[0], g: g[1], b: g[2], a: 1 }); } return; }
+  case 'pemit': for (const v of a[0]) fire.emit({ x: v[0], y: v[1], z: v[2], vx: v[3], vy: v[4], vz: v[5], life: v[6], s0: v[7], s1: v[8], r: v[9], g: v[10], b: v[11], a: v[12], drag: v[13] }); return;
+} }
+function recipe([kind, ...a]) { if (kind === 'islet') return islet(a[0], a[1], { R: a[2], seed: a[3], life: a[4] }).g;
+  if (kind === 'portal') return portalMesh(a[0], a[1]);
+  if (kind === 'model') { const g = new THREE.Group(); loadModel(a[0]).then(m => { if (m) { const q = m.proto.clone(); q.traverse(n => { if (n.isMesh) n.castShadow = true; }); g.add(q); } }); return g; } return null; }
+for (const [k, v] of Object.entries(BM)) NET.reg('BM.' + k, v); for (const [k, v] of Object.entries(BLD.M)) NET.reg('BLD.' + k, v); ROCKS.forEach((r, i) => { NET.reg('R0.' + i, r[0]); NET.reg('R1.' + i, r[1]); }); NET.reg('mobSkin', mobSkin);
+function modalAck(m, id) { m.acks.add(id); if (NET.client) { if (id === NET.id) { NET.req('ok', m.mid); $('modal-ok').disabled = true; $('modal-ok').textContent = 'Ждём остальных…'; } return; } modalCheck(); }
+function modalCheck() { const m = modalCur; if (!m || !m.mid || !modalOn || !NET.host) return; const wait = [...(m.need || [])].filter(id => NET.ghosts.has(id) && !m.acks.has(id));
+  if (m.acks.has('H') && !wait.length) { NET.bcast('mclose', m.mid); modalCur = null; nextModal(); if (m.ok) m.ok(); return; }
+  if (m.acks.has('H')) { $('modal-ok').disabled = true; $('modal-ok').textContent = 'Ждём: ' + wait.map(id => NET.ghosts.get(id).nick).join(', '); } }
+function modalClose(mid) { if (modalCur && modalCur.mid === mid) { modalCur = null; nextModal(); } else { const i = modalQ.findIndex(q => q.mid === mid); if (i >= 0) modalQ.splice(i, 1); } }
+NET.init({ P, S, L, D, scene, mobs, PLANE, mkLabel, place, applyModel, dropModel, time: () => time, log, removeMob, recipe, unObj, ghostDead, inShield, hidden: hiddenMe, clientDiff, hostState, lateJoin, fxPlay, netHit, netReq, netMsg, netPeer, netMobs, netSpawn,
+  get ready() { return hangar.ready; }, teamInfo: () => ({ g: shop.open ? null : Math.round(res.gold * 100) / 100, s: SEE ? 1 : 0 }), teamRes(t) { if (t.g != null && !shop.open) { res.gold = t.g; hudRes(); } SEE = !!t.s; },
+  modalCheck, setMission(id) { L.mission = id; const q = D.MISSIONS[id]; if (q && q.stage) L.stage = q.stage; recompute(false); hangar.redraw(); },
+  netGone(was, quiet) { if (was === 'host') { for (const g of NET.ghosts.values()) if (g.obj) unObj(g.obj); } hangar.redraw(); },
+  hostLost(inGame) { if (!inGame) return hangar.redraw(); MIS.end(true); clearMobs(); NET.repReset(); for (const o of netPts.values()) unObj(o); netPts.clear(); spawnStart(); modalQ.length = 0; modalCur = null; nextModal(); story('Связь с ведущим потеряна. Вы снова в одиночной игре: создайте комнату заново или войдите по коду.', 'Сеть', '#ffb4a0'); hangarOpen = true; keys.clear(); hangar.start(); } });
+const MIS = initMission(Object.assign({ THREE, D, P, S, res, mobs, objects, scene, PLANE, BLD, BM, camera, vortex, fire, KEY, keyName, fmt, freeSpot, spawnMob, removeMob, clearMobs, spawnStart, addObjLabel, enemyShot, warnRing, log, story, explosion, damagePlayer, shockRing, burst, heal, coin, resetRun, setWorld, islet, dropObst, makePond, makeTreeSpot, loadModel, obstacles, segD, kill() { if (!P.dead) die(); }, showShop() { if (!STILL) openHangar(); }, setFog, fogLights: FOG.lights, fogVis: () => FOG.vis, zones, sleep: sleepNow, ROCKS, addObst(x, z, r, life) { const o = { x, z, rad: () => r, life }; obstacles.push(o); return o; },
   openShop(v) { shop.open = v; if (!v) { for (const k in shop.lv) shop.lv[k] = 0; recompute(false); return; } const sold = sellAll(), n = MIS.team(); res.team = res.gold; res.gold = Math.floor(res.gold / n * 100) / 100; hudRes(); return [sold, `Золото команды (${fmt(res.team)}) поделено поровну на ${n === 1 ? 'одного капитана' : n + ' капитанов'}: у каждого ${fmt(res.gold)}. Своё золото можно передать другому капитану в лавке`].filter(Boolean).join('. '); }, time: () => time, blocked: (x, z, pad) => !!obstacleAt(x, z, pad), snap() { first = true; }, setSee(v) { SEE = v; if (!v) for (const m of mobs) m.aggro = false; }, tier: () => tier, setTier, goTier, modal, bolt, cloudVortex, setTierLook, portalMesh,
-  nicks: () => [L.nick || 'Капитан'], toMenu() { hangarOpen = true; keys.clear(); hangar.start(); } });
+  nicks: () => [L.nick || 'Капитан'], toMenu() { hangarOpen = true; keys.clear(); hangar.start(); } }, missionNet()));
+NET.reg('glowTex', MIS.glowTex);
 function openHangar() { hangarOpen = true; keys.clear(); hangar.open(); }
 const hangar = initHangar({ ICONS, SKILL_COL, D, L, KEY, shop, res, S, keyName, fmt, countMob, addMob, removeMobOf, clearMobs, buy, flood, activeFeats, activeSkills,
   rocks: ROCK_VARIANTS, places, goTo,
   resetMobs() { clearMobs(); spawnStart(); }, get see() { return SEE; }, set see(v) { SEE = v; if (!v) for (const m of mobs) m.aggro = false; },
   apply(shipChanged) { recompute(shipChanged); if (shipChanged) setShipModel(); }, saveKeys() { LS.set('keys', KEY); buildSlots(); helpText(); },
   openShop(v) { shop.open = v; if (!v) { for (const k in shop.lv) shop.lv[k] = 0; recompute(false); } },
-  team: () => [{ nick: L.nick || 'Капитан', me: true }], give(to, n) { if (!(n > 0)) return 'Укажите, сколько золота передать'; if (n > res.gold + 1e-6) return 'У вас столько нет'; res.gold -= n; hudRes(); return `Передано ${fmt(n)} золота: ${to}`; },
-  mission: MIS, launch() { if (L.mission && L.mission !== 'M-0') MIS.start(L.mission); else { MIS.end(true); setWorld(null); if (!mobs.length) spawnStart(); } return preload(L.mission).then(warm); }, afterLaunch() { warm(); setTimeout(warm, 1500); },
+  team: () => [{ nick: L.nick || 'Капитан', me: true }, ...NET.players().map(g => ({ nick: g.nick, id: g.id }))], give(to, n) { if (!(n > 0)) return 'Укажите, сколько золота передать'; if (n > res.gold + 1e-6) return 'У вас столько нет'; const g = NET.players().find(q => q.nick === to || q.id === to); if (!g) return 'Такого капитана нет в команде'; res.gold -= n; hudRes(); NET.toPeer(g.id, 'gift', n); return `Передано ${fmt(n)} золота: ${g.nick}`; }, NET,
+  mission: MIS, launch() { if (NET.client) return preload(L.mission).then(warm); if (NET.host) { NET.inGame = true; NET.bcast('launch', { mission: L.mission }); NET.sendMe(); } if (L.mission && L.mission !== 'M-0') MIS.start(L.mission); else { MIS.end(true); setWorld(null); if (!mobs.length) spawnStart(); } return preload(L.mission).then(warm); }, afterLaunch() { warm(); setTimeout(warm, 1500); },
   onClose() { hangarOpen = false; last = performance.now(); if (!modalOn && modalQ.length) nextModal(); } });
 $('btn-hangar').addEventListener('click', openHangar);
 $('r-coin').src = COINS.gold;
@@ -977,7 +1187,8 @@ $('in-close').addEventListener('click', () => { inspect = null; drawInspect(); }
 recompute(true); setShipModel();
 
 let last = performance.now(), frames = 0, fpsT = 0;
-function frame(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; if (window.__freeze) { requestAnimationFrame(frame); return; } if (!window.__pause && !hangarOpen && !paused && !modalOn) update(dt); render(dt); frames++; fpsT += dt; if (fpsT > 0.5) { $('fps').textContent = Math.round(frames / fpsT) + ' к/с'; frames = 0; fpsT = 0; } window.__frames = (window.__frames || 0) + 1; requestAnimationFrame(frame); }
+function frame(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; if (window.__freeze) { requestAnimationFrame(frame); return; } if (!window.__pause && (!hangarOpen || (NET.live && NET.inGame)) && !paused && !modalOn) update(dt); render(dt); NET.tick(dt); frames++; fpsT += dt; if (fpsT > 0.5) { $('fps').textContent = Math.round(frames / fpsT) + ' к/с'; frames = 0; fpsT = 0; } window.__frames = (window.__frames || 0) + 1; requestAnimationFrame(frame); }
 log(`Мобы и боссы пока вас не видят. ${keyName(KEY.menu)}: ангар — корабль, умения, техника, мобы, лавка, клавиши.`);
 if (STILL) { window.__pause = true; window.__g = { info: renderer.info, MIS, makeTreeSpot, makePond, okAll() { let n = 0; while (modalOn && n++ < 20) $('modal-ok').click(); return n; }, get modalOn() { return modalOn; }, warm, interact, trail, fire, smoke, islands, goTo, places, setTier, get tier() { return tier; }, P, S, L, D, KEY, slots: () => slots, mobs, objects, res, shots, zones, attach, FOG, setFog, sleepNow, webs, cloud, sun, scene, keys, use, setShip(id) { L.ship = id; recompute(true); setShipModel(); }, get flames() { return flames.length; }, setQ(n) { q = n; applyQ(); }, useSkill(id) { return useSkill({ id }); }, useDevice(id) { return useDevice({ id }); }, fireWeapon(id) { return fireWeapon({ id }); }, story, get inspect() { return inspect; }, set inspect(m) { inspect = m; inspDirty = true; }, interact, cycleTarget, dash, orbs, addMob, hitMob, damagePlayer, finish, recompute, swapSlot, openHangar, hangar, shop, flood, camera, sim(n, dt = 1 / 30) { for (let i = 0; i < n; i++) update(dt); }, render, cam(y, p, d) { camYaw = y; camPitch = p; camDist = d; first = true; }, get target() { return target; }, set target(m) { target = m; }, get channel() { return channel; }, set see(v) { SEE = v; } }; }
+window.__net = { NET, P, S, L, mobs, hitMob, get target() { return target; }, objects, MIS, res, shop, get tier() { return tier; }, get modalOn() { return modalOn; }, get paused() { return paused; }, use, interact, finish, damagePlayer, keys, get channel() { return channel; }, zones, FOG };
 requestAnimationFrame(frame);

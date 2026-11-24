@@ -40,7 +40,22 @@ export function initHangar(api) {
   const build = () => ['ship', 'weapons', ...(L.stage >= 2 ? ['skills'] : []), 'gear', 'crew'];
   const steps = () => ['mission', ...build(), 'lobby'];
   const tabList = () => mode === 'wizard' ? [...steps(), 'keys'] : api.mission.on ? [shop.open ? 'shop' : 'keys'] : [...build(), ...(api.mission.on ? [] : ['mobs']), 'shop', 'catch', 'world', 'keys'];
-  let count = 0, timer = null;
+  let count = 0, timer = null, ready = false;
+  const NET = api.NET;
+  // ---------- игра с друзьями: комната по коду ----------
+  const roomCode = (new URLSearchParams(location.search).get('room') || '').toUpperCase().slice(0, 4);
+  let joinCode = roomCode, netBusy = false, copied = false;
+  function vRoom() { const st = NET.status ? `<p class="msg net-st" role="status">${esc(NET.status)}</p>` : '';
+    if (!NET.role) return `<section class="room"><h3 class="sec">Игра с друзьями</h3><p class="lead">Один создаёт комнату и отправляет друзьям код или ссылку. Остальные входят по коду. Сервер не нужен: браузеры соединяются напрямую. До 20 капитанов.</p>
+      <div class="room-row"><button type="button" class="btn" data-act="room-new"${netBusy ? ' disabled' : ''}>Создать комнату</button><span class="or">или</span><label class="code"><span class="lab">Код комнаты</span><input id="hg-code" type="text" maxlength="4" autocomplete="off" spellcheck="false" value="${esc(joinCode)}" placeholder="ABCD"></label><button type="button" class="btn ghost" data-act="room-join"${netBusy ? ' disabled' : ''}>Войти</button></div>${st}</section>`;
+    const n = NET.lobby.length || 1;
+    if (NET.host) return `<section class="room on"><h3 class="sec">Комната <b class="fig">${NET.code}</b> · вы ведущий · капитанов: ${n}</h3><p class="lead">Отправьте друзьям код <b>${NET.code}</b> или ссылку. Миссию выбираете вы, корабль и снаряжение каждый выбирает сам.</p>
+      <div class="room-row"><input id="hg-link" type="text" readonly value="${esc(NET.link())}" aria-label="Ссылка на комнату"><button type="button" class="btn ghost" data-act="room-copy">${copied ? 'Скопировано' : 'Скопировать ссылку'}</button><button type="button" class="btn ghost" data-act="room-leave">Закрыть комнату</button></div>${st}</section>`;
+    return `<section class="room on"><h3 class="sec">Комната <b class="fig">${NET.code}</b> · капитанов: ${n}</h3><p class="lead">Миссию выбирает ведущий${NET.lobby[0] ? ': ' + esc(NET.lobby[0].nick) : ''}. Выберите корабль и снаряжение, в зале ожидания нажмите «Готов».</p><div class="room-row"><button type="button" class="btn ghost" data-act="room-leave">Выйти из комнаты</button></div>${st}</section>`; }
+  NET.onLobby(() => { const a = document.activeElement; if (root.style.display !== 'none' && mode === 'wizard' && !count && !(a && a.tagName === 'INPUT' && root.contains(a))) draw(); else if (root.style.display !== 'none') drawFoot(); });
+  NET.onStatus(() => { netBusy = false; if (root.style.display !== 'none') draw(); });
+  function roomJoin() { const c = ($('hg-code') ? $('hg-code').value : joinCode).trim().toUpperCase(); joinCode = c; if (!L.nick.trim()) { msg = 'Сначала введите имя капитана'; return; } netBusy = true; ready = false; NET.join(c, err => { netBusy = false; if (err) msg = err; draw(); }); }
+  if (roomCode && L.nick.trim()) setTimeout(() => { if (!NET.role) { netBusy = true; NET.join(roomCode, err => { netBusy = false; if (err) msg = err; draw(); }); } }, 300);
 
   function syncPick() { for (const k of 'wdc') { const n = LIM[k](), out = []; for (const id of L[ARR[k]]) if (out.length < n && IDS[k]().includes(id) && !out.includes(id)) out.push(id); pick[k] = out; } }
   function commit(k) { const ids = IDS[k](), p = pick[k]; L[ARR[k]] = [...p]; api.apply(false); }
@@ -53,7 +68,7 @@ export function initHangar(api) {
   const sk2 = () => L.spec ? (L.skills2 || []).filter(s => D.SPECS[L.spec].skills.includes(s)).slice(0, 2) : [];
   // чего не хватает на шаге: пустая строка, если всё выбрано
   function need(t = tab) { const q = D.SHIPS[L.ship];
-    if (t === 'mission') return !L.mission ? 'Выберите миссию' : !L.nick.trim() ? 'Введите имя капитана' : '';
+    if (t === 'mission') return !L.mission ? (NET.client ? 'Ведущий ещё не выбрал миссию' : 'Выберите миссию') : !L.nick.trim() ? 'Введите имя капитана' : '';
     if (t === 'lobby') return '';
     if (t === 'ship') return !L.chosen ? 'Выберите корабль' : L.stage === 2 && q.feats.length && !q.feats.slice(1).includes(L.feat2) ? 'Выберите умение корабля' : L.stage >= 3 && !L.featX ? 'Выберите дополнительное умение' : '';
     if (t === 'skills') { if (!L.spec) return 'Выберите специальность'; const n = 2 - sk2().length; return L.stage === 2 && n > 0 ? (n === 2 ? 'Выберите 2 навыка' : 'Выберите ещё 1 навык') : L.stage >= 3 && !L.skillX ? 'Выберите дополнительный навык' : ''; }
@@ -61,12 +76,17 @@ export function initHangar(api) {
 
   // ---------- миссия и зал ожидания ----------
   const recRow = (ids, must = {}) => ids.length ? `<p class="lab rec-l">Рекомендуем</p><ul class="rec">${ids.map(id => { const it = D.WEAPONS[id] || D.DEVICES[id]; return `<li${must[id] ? ' class="must"' : ''}>${ic(id, it.color)}<span>${esc(it.name)}${must[id] ? `<small>${esc(must[id])}</small>` : ''}</span></li>`; }).join('')}</ul>` : '';
-  function vMission() { return `<label class="nick"><span class="lab">Имя капитана</span><input id="hg-nick" type="text" maxlength="16" autocomplete="off" spellcheck="false" value="${esc(L.nick)}" placeholder="Как вас звать в артели"></label>
-    <div class="list" role="radiogroup" aria-label="Миссии">${Object.entries(D.MISSIONS).map(([id, q]) => `<div class="pick mis" role="radio" tabindex="0" aria-checked="${id === L.mission}" data-mission="${id}"><div class="c1"><p class="lab">${id === 'M-0' ? 'Без целей' : 'Миссия ' + id.slice(2)}</p><h3>${esc(q.name)}</h3><p class="lab">${esc(q.theme)} · ${esc(q.time)}</p></div><div class="desc"><p>${esc(q.story)}</p>${recRow(q.rec, q.must)}</div></div>`).join('')}</div>`; }
+  function vMission() { return `${vRoom()}<label class="nick"><span class="lab">Имя капитана</span><input id="hg-nick" type="text" maxlength="16" autocomplete="off" spellcheck="false" value="${esc(L.nick)}" placeholder="Как вас звать в артели"></label>
+    <div class="list${NET.client ? ' ro' : ''}" role="radiogroup" aria-label="Миссии">${Object.entries(D.MISSIONS).filter(([id]) => !NET.client || id === L.mission).map(([id, q]) => `<div class="pick mis" role="radio" tabindex="0" aria-checked="${id === L.mission}" data-mission="${id}"><div class="c1"><p class="lab">${id === 'M-0' ? 'Без целей' : 'Миссия ' + id.slice(2)}</p><h3>${esc(q.name)}</h3><p class="lab">${esc(q.theme)} · ${esc(q.time)}</p></div><div class="desc"><p>${esc(q.story)}</p>${recRow(q.rec, q.must)}</div></div>`).join('')}</div>`; }
   function vLobby() { const q = D.MISSIONS[L.mission] || D.MISSIONS['M-0'], sh = D.SHIPS[L.ship], bad = steps().find(t => need(t));
     return `<div class="brief"><p class="lab">${L.mission === 'M-0' ? 'Свободный полёт' : 'Миссия ' + L.mission.slice(2) + ' · ' + esc(q.theme)}</p><h3 class="big">${esc(q.name)}</h3><p class="lead">${esc(q.story)}</p>${recRow(q.rec, q.must)}</div>
-    <h3 class="sec">Команда</h3><table><thead><tr><th>Капитан</th><th>Корабль</th><th>Специальность</th><th>Оружие</th><th>Статус</th></tr></thead><tbody><tr><td><b>${esc(L.nick || 'Капитан')}</b></td><td>${L.chosen ? esc(sh.name) : 'не выбран'}</td><td>${L.spec && L.stage >= 2 ? esc(D.SPECS[L.spec].name) : 'нет'}</td><td>${L.weapons.map(w => esc(D.WEAPONS[w].name)).join(', ') || 'не выбрано'}</td><td><b>${count ? 'Готов' : bad ? 'Собирается' : 'Ждёт команды'}</b></td></tr></tbody></table>
-    <p class="lab wait">${count ? '' : 'В этой сцене вы летите один. В сетевой игре здесь соберётся вся команда, до 20 капитанов, и вылет начнётся, когда готовы все.'}</p>${count > 0 ? `<p class="countdown" role="status">Вылет через <b class="fig">${count}</b></p>` : count < 0 ? '<p class="countdown" role="status">Готовим небо к вылету…</p>' : ''}`; }
+    <h3 class="sec">Команда${NET.role ? ' · комната ' + NET.code : ''}</h3><table><thead><tr><th>Капитан</th><th>Корабль</th><th>Специальность</th><th>Оружие</th><th>Статус</th></tr></thead><tbody>${team().map(p => `<tr><td><b>${esc(p.nick || 'Капитан')}</b>${p.host ? ' <small>ведущий</small>' : ''}${p.me ? ' <small>вы</small>' : ''}</td><td>${p.ship && D.SHIPS[p.ship] ? esc(D.SHIPS[p.ship].name) : 'не выбран'}</td><td>${p.spec && (p.stage || 1) >= 2 && D.SPECS[p.spec] ? esc(D.SPECS[p.spec].name) : 'нет'}</td><td>${(p.weapons || []).filter(w => D.WEAPONS[w]).map(w => esc(D.WEAPONS[w].name)).join(', ') || 'не выбрано'}</td><td><b>${p.st}</b></td></tr>`).join('')}</tbody></table>
+    <p class="lab wait">${count ? '' : !NET.role ? 'Вы летите один. Чтобы играть с друзьями, создайте комнату на первом шаге «Миссия».' : NET.host ? (allReady() ? 'Все готовы: можно начинать вылет.' : 'Вылет можно начать, когда все капитаны нажмут «Готов».') : ready ? 'Ждём, пока ведущий начнёт вылет.' : 'Нажмите «Готов», когда соберёте корабль.'}</p>${count > 0 ? `<p class="countdown" role="status">Вылет через <b class="fig">${count}</b></p>` : count < 0 ? '<p class="countdown" role="status">Готовим небо к вылету…</p>' : ''}`; }
+  function team() { const bad = steps().find(t => need(t)), me = { nick: L.nick, ship: L.chosen ? L.ship : null, spec: L.spec, stage: L.stage, weapons: L.weapons, me: true, host: NET.host };
+    me.st = count ? 'Вылет' : NET.client ? (ready ? 'Готов' : bad ? 'Собирается' : 'Не нажал «Готов»') : bad ? 'Собирается' : 'Готов';
+    if (!NET.role) return [me]; return NET.lobby.map(p => p.id === NET.id ? me : Object.assign({}, p, { st: p.host ? 'Ведущий' : p.ready ? 'Готов' : 'Собирается' })); }
+  const allReady = () => NET.lobby.every(p => p.id === NET.id || p.host || p.ready);
+
 
   // ---------- корабли ----------
   function featsOf(id) { const f = D.SHIPS[id].feats, me = id === L.ship && L.chosen, X = L.featX && !f.includes(L.featX) ? [[L.featX, 1, 'x']] : []; if (!f.length) return L.stage >= 3 ? X : [];
@@ -153,7 +173,7 @@ export function initHangar(api) {
   function drawFoot() { const st = steps(), wiz = mode === 'wizard', i = st.indexOf(tab); const m = `<p class="msg" role="status">${esc(msg)}</p>`; let f;
     if (picker) f = `<button type="button" class="btn ghost" data-act="unpick">Назад</button>${m}`;
     else if (wiz && tab === 'keys') f = `<button type="button" class="btn ghost" data-act="keys-back">Назад к подготовке</button>${m}`;
-    else if (wiz && tab === 'lobby') { const bad = st.find(t => need(t)); f = `<button type="button" class="btn ghost" data-act="prev"${count ? ' disabled' : ''}>Назад</button>${m}<button type="button" class="btn ghost" data-act="keys"${count ? ' disabled' : ''}>Управление</button>${count ? '<button type="button" class="btn ghost" data-act="unready">Отмена</button>' : `<button type="button" class="btn" data-act="ready"${bad ? ' disabled' : ''}>${bad ? `Не готово: ${NAMES[bad]}` : 'Готов'}</button>`}`; }
+    else if (wiz && tab === 'lobby') { const bad = st.find(t => need(t)); f = `<button type="button" class="btn ghost" data-act="prev"${count ? ' disabled' : ''}>Назад</button>${m}<button type="button" class="btn ghost" data-act="keys"${count ? ' disabled' : ''}>Управление</button>${count ? (NET.client ? '' : '<button type="button" class="btn ghost" data-act="unready">Отмена</button>') : NET.client ? `<button type="button" class="btn" data-act="gready"${bad ? ' disabled' : ''}>${bad ? `Не готово: ${NAMES[bad]}` : ready ? 'Не готов' : 'Готов'}</button>` : `<button type="button" class="btn" data-act="ready"${bad || (NET.live && !allReady()) ? ' disabled' : ''}>${bad ? `Не готово: ${NAMES[bad]}` : NET.live ? (allReady() ? 'Начать вылет' : 'Ждём готовности команды') : 'Готов'}</button>`}`; }
     else if (wiz) { const n = need(); f = `<button type="button" class="btn ghost" data-act="prev"${i <= 0 ? ' disabled' : ''}>Назад</button>${m}${tab === 'mission' ? '' : '<button type="button" class="btn ghost" data-act="wipe">Сбросить выбор</button>'}<button type="button" class="btn ghost" data-act="keys">Управление</button><button type="button" class="btn" data-act="next"${n ? ' disabled' : ''}>${n || `Далее: ${NAMES[st[i + 1]]}`}</button>`; }
     else f = `${m}${api.mission.on ? '' : '<button type="button" class="btn ghost" data-act="remission">Сменить миссию</button>'}<button type="button" class="btn" data-act="close">Вернуться в полёт (${esc(keyName(KEY.menu))})</button>`;
     foot.innerHTML = f; }
@@ -161,10 +181,17 @@ export function initHangar(api) {
   function close() { capture = null; picker = null; syncPick(); root.style.display = 'none'; api.onClose(); }
 
   function act(el) { const d = el.dataset; msg = '';
+    if (d.act === 'room-new') { if (!L.nick.trim()) { msg = 'Сначала введите имя капитана'; return draw(); } netBusy = true; NET.create(err => { netBusy = false; if (err) msg = err; draw(); }); return draw(); }
+    if (d.act === 'room-join') { roomJoin(); return draw(); }
+    if (d.act === 'room-leave') { NET.leave(); ready = false; msg = 'Вы вышли из комнаты'; return draw(); }
+    if (d.act === 'room-copy') { const t = NET.link(); (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => { copied = true; draw(); setTimeout(() => { copied = false; }, 2500); }, () => { const el = $('hg-link'); if (el) { el.select(); document.execCommand('copy'); copied = true; draw(); } }); return; }
+    if (d.act === 'gready') { ready = !ready; NET.sendMe(); return draw(); }
     if (count && d.act !== 'unready') return;
+    if (NET.client && d.mission) return;
     if (d.tab) return go(d.tab);
     if (d.mission) { L.mission = d.mission; const q = D.MISSIONS[d.mission]; if (q.stage) L.stage = q.stage; else if (!L.stage) L.stage = 1; api.apply(false); syncPick(); return draw(); }
-    if (d.act === 'ready') { count = -1; draw(); requestAnimationFrame(() => requestAnimationFrame(() => Promise.resolve(api.launch()).catch(() => {}).then(() => { count = 3; draw(); timer = setInterval(() => { count--; if (count <= 0) { clearInterval(timer); timer = null; count = 0; close(); api.afterLaunch(); } else draw(); }, 1000); }))); return; }
+    if (d.act === 'ready') { if (NET.client) return; go3(); return; }
+    if (d.act === 'ready-net') { count = -1; draw(); requestAnimationFrame(() => requestAnimationFrame(() => Promise.resolve(api.launch()).catch(() => {}).then(() => { count = 3; draw(); timer = setInterval(() => { count--; if (count <= 0) { clearInterval(timer); timer = null; count = 0; close(); api.afterLaunch(); } else draw(); }, 1000); }))); return; }
     if (d.act === 'unready') { clearInterval(timer); timer = null; count = 0; return draw(); }
     if (d.stage) { L.stage = +d.stage; openX = null; picker = null; api.apply(false); syncPick(); }
     else if (d.plus) { if (d.sfor && d.sfor !== L.spec) { L.spec = d.sfor; L.skills2 = []; api.apply(false); } if (d.for && (d.for !== L.ship || !L.chosen)) { L.ship = d.for; L.chosen = true; L.feat2 = null; if (D.SHIPS[L.ship].feats.includes(L.featX)) L.featX = null; api.apply(true); syncPick(); } const f = d.sfor || d.for || ''; openX = openX && openX.k === d.plus && openX.f === f ? null : { k: d.plus, f }; return draw(); }
@@ -198,11 +225,14 @@ export function initHangar(api) {
   const hit = e => e.target.closest('button') || e.target.closest('[data-ship],[data-spec],[data-pick],[data-choose],[data-mission]');
   root.addEventListener('click', e => { const el = hit(e); if (el && !el.disabled && root.contains(el)) act(el); });
   root.addEventListener('change', e => { if (e.target.id === 'hg-see') api.see = e.target.checked; });
-  root.addEventListener('input', e => { if (e.target.id === 'hg-nick') { L.nick = e.target.value.slice(0, 16); api.apply(false); drawFoot(); } });
-  function key(e) { if (e.target && e.target.id === 'hg-nick' && e.code !== 'Escape') return;
+  root.addEventListener('input', e => { if (e.target.id === 'hg-nick') { L.nick = e.target.value.slice(0, 16); api.apply(false); drawFoot(); if (NET.role) NET.sendMe(); } if (e.target.id === 'hg-code') { joinCode = e.target.value.toUpperCase(); e.target.value = joinCode; } });
+  root.addEventListener('keydown', e => { if (e.target.id === 'hg-code' && e.key === 'Enter') { roomJoin(); draw(); } });
+  function key(e) { if (e.target && (e.target.id === 'hg-nick' || e.target.id === 'hg-code') && e.code !== 'Escape') return;
     if (capture) { e.preventDefault(); if (e.code !== 'Escape') { const other = Object.keys(KEY).find(a => KEY[a] === e.code && a !== capture); if (other) { KEY[other] = KEY[capture]; msg = `Клавиша ${keyName(e.code)} была занята действием «${D.KEY_NAMES[other]}»: действия поменялись местами.`; } KEY[capture] = e.code; api.saveKeys(); } capture = null; return draw(); }
     if (e.code === 'Escape' || e.code === KEY.menu) { e.preventDefault(); if (picker) { picker = null; draw(false); } else if (mode === 'wizard') { if (tab === 'keys') go(keysBack || 'ship'); } else close(); return; }
     if ((e.code === 'Enter' || e.code === 'Space') && e.target.matches && e.target.matches('.pick[tabindex]')) { e.preventDefault(); const id = e.target.dataset; act(e.target); const sel = Object.keys(id).map(k => `[data-${k}="${id[k]}"]`).join(''); const again = sel && body.querySelector('.pick' + sel); if (again) again.focus(); } }
   function show(m, t) { mode = m; tab = t || 'ship'; picker = null; capture = null; msg = ''; syncPick(); root.dataset.mode = m; root.style.display = 'flex'; draw(false); const f = body.querySelector('.pick[aria-checked="true"]') || foot.querySelector('button:not([disabled])'); if (f) f.focus({ preventScroll: true }); }
-  return { key, open(t) { show('tabs', t); }, start() { count = 0; show('wizard', 'mission'); }, close, get tab() { return tab; }, get mode() { return mode; } };
+  // вылет: отсчёт 3-2-1 после подготовки мира. У гостя его запускает ведущий; опоздавший к началу влетает сразу
+  function go3(late) { clearInterval(timer); count = -1; draw(); requestAnimationFrame(() => requestAnimationFrame(() => Promise.resolve(api.launch()).catch(e => console.error(e)).then(() => { if (late) { count = 0; ready = false; close(); api.afterLaunch(); return; } count = 3; draw(); timer = setInterval(() => { count--; if (count <= 0) { clearInterval(timer); timer = null; count = 0; ready = false; close(); api.afterLaunch(); } else draw(); }, 1000); }))); }
+  return { key, open(t) { show('tabs', t); }, start() { count = 0; ready = false; show('wizard', NET.role ? 'lobby' : 'mission'); }, close, get tab() { return tab; }, get mode() { return mode; }, get ready() { return ready; }, netGo(late) { if (root.style.display === 'none') show('wizard', 'lobby'); go3(late); }, redraw() { if (root.style.display !== 'none') draw(); } };
 }
