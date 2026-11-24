@@ -1,14 +1,14 @@
-import { applyModel, loadModel, dropModel, pauseModel } from './models.js?v=202611241617';
-import * as D from './data.js?v=202611241617';
-import { initHangar, dmgTable } from './menu.js?v=202611241617';
-import { COINS } from './coins.js?v=202611241617';
-import { initBuild, waterMat } from './build.js?v=202611241617';
-import { initMission } from './mission.js?v=202611241617';
-import { LOOT } from './loot.js?v=202611241617';
-import * as FX from './fx.js?v=202611241617';
-import { ICONS } from './icons.js?v=202611241617';
-import { NET } from './net.js?v=202611241617';
-import { THREE, scene, camera, renderer, canvas, sunDir, sun, cloud, cloudMat, sky, islands, spires, makeIsland, makeSpire, rng, perlin3, STILL, vortex, CLUMP_G, CLUMP_M, CLUMP_D, ridged3, hemi, ROCK_VARIANTS, ROCKS } from './main.js?v=202611241617';
+import { applyModel, loadModel, dropModel, pauseModel } from './models.js?v=202611241652';
+import * as D from './data.js?v=202611241652';
+import { initHangar, dmgTable } from './menu.js?v=202611241652';
+import { COINS } from './coins.js?v=202611241652';
+import { initBuild, waterMat } from './build.js?v=202611241652';
+import { initMission } from './mission.js?v=202611241652';
+import { LOOT } from './loot.js?v=202611241652';
+import * as FX from './fx.js?v=202611241652';
+import { ICONS } from './icons.js?v=202611241652';
+import { NET } from './net.js?v=202611241652';
+import { THREE, scene, camera, renderer, canvas, sunDir, sun, cloud, cloudMat, sky, islands, spires, makeIsland, makeSpire, rng, perlin3, STILL, vortex, CLUMP_G, CLUMP_M, CLUMP_D, ridged3, hemi, ROCK_VARIANTS, ROCKS } from './main.js?v=202611241652';
 
 const PLANE = 36;             // высота, на которой идёт вся игра
 const $ = id => document.getElementById(id);
@@ -226,10 +226,10 @@ function mkLabel(cls, text, bar = true) { const d = document.createElement('div'
 function place(el, x, y, z) { V.set(x, y, z).project(camera); if (V.z > 1 || V.z < -1 || Math.abs(V.x) > 1.1 || Math.abs(V.y) > 1.1) { el.style.display = 'none'; return false; } el.style.display = ''; el.style.left = ((V.x * 0.5 + 0.5) * innerWidth) + 'px'; el.style.top = ((-V.y * 0.5 + 0.5) * innerHeight) + 'px'; return true; }
 function floatText(text, color, x, y, z, big) { V.set(x, y, z).project(camera); if (V.z > 1) return; const d = document.createElement('div'); d.className = big ? 'fl big' : 'fl'; d.textContent = text; d.style.color = color; d.style.left = ((V.x * 0.5 + 0.5) * innerWidth + (rnd() - 0.5) * 30) + 'px'; d.style.top = ((-V.y * 0.5 + 0.5) * innerHeight) + 'px'; labels.appendChild(d); setTimeout(() => d.remove(), 1150); }
 // модальное окно: игра стоит, пока не нажато «ОК». В сетевой игре — пока «ОК» не нажмут все
-const modalQ = []; let modalOn = false;
-function modal(head, text, kick, ok, mid) { if (NET.host && NET.live && !mid) { mid = ++modalN; NET.bcast('modal', [mid, head, text, kick]); } modalQ.push({ head, text, kick, ok, mid, acks: new Set(), need: NET.host ? new Set(NET.players().map(g => g.id)) : null }); if (!modalOn && !hangarOpen) nextModal(); }
+const modalQ = []; let modalOn = false; const MACKS = new Map(); function modalAcks(mid) { let a = MACKS.get(mid); if (!a) { a = new Set(); MACKS.set(mid, a); if (MACKS.size > 40) MACKS.delete(MACKS.keys().next().value); } return a; } let modalRetry = 0;
+function modal(head, text, kick, ok, mid) { if (NET.host && NET.live && !mid) { mid = ++modalN; NET.bcast('modal', [mid, head, text, kick]); } modalQ.push({ head, text, kick, ok, mid, acks: mid ? modalAcks(mid) : new Set(), need: NET.host ? new Set(NET.players().map(g => g.id)) : null }); if (!modalOn && !hangarOpen) nextModal(); }
 let modalN = 0, modalCur = null;
-function nextModal() { const m = modalQ.shift(); if (!m) { modalOn = false; $('modal').style.display = 'none'; keys.clear(); return; } modalOn = true; $('modal-k').textContent = m.kick || ''; $('modal-h').textContent = m.head; $('modal-t').textContent = m.text; $('modal').style.display = 'flex'; modalCur = m; $('modal-ok').disabled = false; $('modal-ok').textContent = 'ОК'; $('modal-ok').onclick = () => { if (m.mid && NET.live) return modalAck(m, NET.id); nextModal(); if (m.ok) m.ok(); }; setTimeout(() => $('modal-ok').focus(), 0); }
+function nextModal() { const m = modalQ.shift(); if (!m) { modalOn = false; $('modal').style.display = 'none'; keys.clear(); return; } modalOn = true; $('modal-k').textContent = m.kick || ''; $('modal-h').textContent = m.head; $('modal-t').textContent = m.text; $('modal').style.display = 'flex'; modalCur = m; $('modal-ok').disabled = false; $('modal-ok').textContent = 'ОК'; $('modal-ok').onclick = () => { if (m.mid && NET.live) return modalAck(m, NET.id); nextModal(); if (m.ok) m.ok(); }; setTimeout(() => $('modal-ok').focus(), 0); if (m.mid && NET.host) modalCheck(); }
 let storyT = 0; function story(text, got, color) { $('story-t').textContent = text; const g = $('story-g'); g.textContent = got; g.style.color = color || '#ffe08a'; $('story').style.display = 'block'; storyT = 10; }
 let toastT = 0, muteLog = false; function log(text, color) { if (muteLog) return; const el = $('toast'); el.textContent = text; el.style.color = color || '#eef2f6'; el.style.display = 'block'; toastT = 2.6; }
 const meLbl = mkLabel('me', 'ВЫ');
@@ -1055,7 +1055,7 @@ function netReq(t, d, from) { const g = NET.ghosts.get(from), gp = g && g.proxy;
     case 'gold': if (!shop.open && d > 0 && d < 300) { res.gold += d; hudRes(); } return;
     case 'travel': return travel(d[0], d[1], d[2]);
     case 'dash': for (const m of mobs) if (m.att && m.tid === from) { m.att = false; m.cd = 1.5; } return;
-    case 'ok': if (modalCur && modalCur.mid === d) modalAck(modalCur, from); return;
+    case 'ok': if (modalCur && modalCur.mid === d) modalAck(modalCur, from); else modalAcks(d).add(from); return;
     case 'pause': return setPause(!!d);
     case 'roar': return roar(from);
     case 'struct': { const [sid, x, z, hp, name, decoy, life] = d; PH.set(from + ':' + sid, { struct: true, ph: true, owner: from, sid, x, z, hp, max: hp, name, decoy: !!decoy, life: life || 20, t: 0, sent: hp }); return; }
@@ -1192,7 +1192,7 @@ function recipe([kind, ...a]) { if (kind === 'islet') return islet(a[0], a[1], {
   if (kind === 'portal') return portalMesh(a[0], a[1]);
   if (kind === 'model') { const g = new THREE.Group(); loadModel(a[0]).then(m => { if (m) { const q = m.proto.clone(); q.traverse(n => { if (n.isMesh) n.castShadow = true; }); g.add(q); } }); return g; } return null; }
 for (const [k, v] of Object.entries(BM)) NET.reg('BM.' + k, v); for (const [k, v] of Object.entries(BLD.M)) NET.reg('BLD.' + k, v); ROCKS.forEach((r, i) => { NET.reg('R0.' + i, r[0]); NET.reg('R1.' + i, r[1]); }); NET.reg('mobSkin', mobSkin);
-function modalAck(m, id) { m.acks.add(id); if (NET.client) { if (id === NET.id) { NET.req('ok', m.mid); $('modal-ok').disabled = true; $('modal-ok').textContent = 'Ждём остальных…'; } return; } modalCheck(); }
+function modalAck(m, id) { m.acks.add(id); if (NET.client) { if (id === NET.id) { NET.req('ok', m.mid); $('modal-ok').disabled = true; $('modal-ok').textContent = 'Ждём остальных…'; clearInterval(modalRetry); modalRetry = setInterval(() => { if (modalCur !== m || !NET.live) return clearInterval(modalRetry); NET.req('ok', m.mid); }, 2000); } return; } modalCheck(); }
 function modalCheck() { const m = modalCur; if (!m || !m.mid || !modalOn || !NET.host) return; const wait = [...(m.need || [])].filter(id => NET.ghosts.has(id) && !m.acks.has(id));
   if (m.acks.has('H') && !wait.length) { NET.bcast('mclose', m.mid); modalCur = null; nextModal(); if (m.ok) m.ok(); return; }
   if (m.acks.has('H')) { $('modal-ok').disabled = true; $('modal-ok').textContent = 'Ждём: ' + wait.map(id => NET.ghosts.get(id).nick).join(', '); } }
@@ -1225,5 +1225,5 @@ let last = performance.now(), frames = 0, fpsT = 0;
 function frame(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; if (window.__freeze) { requestAnimationFrame(frame); return; } if (!window.__pause && (!hangarOpen || (NET.live && NET.inGame)) && !paused && !modalOn) update(dt); render(dt); NET.tick(dt); frames++; fpsT += dt; if (fpsT > 0.5) { $('fps').textContent = Math.round(frames / fpsT) + ' к/с'; frames = 0; fpsT = 0; } window.__frames = (window.__frames || 0) + 1; requestAnimationFrame(frame); }
 log(`Мобы и боссы пока вас не видят. ${keyName(KEY.menu)}: ангар — корабль, умения, техника, мобы, лавка, клавиши.`);
 if (STILL) { window.__pause = true; window.__g = { info: renderer.info, MIS, makeTreeSpot, makePond, okAll() { let n = 0; while (modalOn && n++ < 20) $('modal-ok').click(); return n; }, get modalOn() { return modalOn; }, warm, interact, trail, fire, smoke, islands, goTo, places, setTier, get tier() { return tier; }, P, S, L, D, KEY, slots: () => slots, mobs, objects, res, shots, zones, attach, FOG, setFog, sleepNow, webs, cloud, sun, scene, keys, use, setShip(id) { L.ship = id; recompute(true); setShipModel(); }, get flames() { return flames.length; }, setQ(n) { q = n; applyQ(); }, useSkill(id) { return useSkill({ id }); }, useDevice(id) { return useDevice({ id }); }, fireWeapon(id) { return fireWeapon({ id }); }, story, get inspect() { return inspect; }, set inspect(m) { inspect = m; inspDirty = true; }, interact, cycleTarget, dash, orbs, addMob, hitMob, damagePlayer, finish, recompute, swapSlot, openHangar, hangar, shop, flood, camera, sim(n, dt = 1 / 30) { for (let i = 0; i < n; i++) update(dt); }, render, cam(y, p, d) { camYaw = y; camPitch = p; camDist = d; first = true; }, get target() { return target; }, set target(m) { target = m; }, get channel() { return channel; }, set see(v) { SEE = v; } }; }
-window.__net = { NET, P, S, L, mobs, hitMob, spawnMob, useSkill: id => useSkill({ id }), useDevice: id => useDevice({ id }), zonesL: zones, get towing() { return towing; }, get target() { return target; }, objects, MIS, res, shop, get tier() { return tier; }, get modalOn() { return modalOn; }, get paused() { return paused; }, use, interact, finish, damagePlayer, keys, get channel() { return channel; }, zones, FOG };
+window.__net = { modal: (...a) => modal(...a), get modalCur() { return modalCur; }, NET, P, S, L, mobs, hitMob, spawnMob, useSkill: id => useSkill({ id }), useDevice: id => useDevice({ id }), zonesL: zones, get towing() { return towing; }, get target() { return target; }, objects, MIS, res, shop, get tier() { return tier; }, get modalOn() { return modalOn; }, get paused() { return paused; }, use, interact, finish, damagePlayer, keys, get channel() { return channel; }, zones, FOG };
 requestAnimationFrame(frame);
