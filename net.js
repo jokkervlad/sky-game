@@ -4,13 +4,17 @@
 // Без комнаты всё работает как одиночная игра: ведущий без гостей.
 import * as THREE from 'three';
 
-const PREFIX = 'sky3d-v1-';                 // имя комнаты на сервере-своднике: префикс + код
+const PREFIX = 'sky3d-v1-';
+export const VERSION = '24.11 23:00';                 // ставится при выкладке: дата и время сборки                 // имя комнаты на сервере-своднике: префикс + код
 const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const SEND_HZ = 15, REP_HZ = 10;
 const qs = new URLSearchParams(location.search);
 const r1 = v => Math.round(v * 10) / 10, r2 = v => Math.round(v * 100) / 100;
 
+// адресная строка всегда показывает текущую комнату: её можно копировать и отправлять
+function roomUrl(code) { try { const u = new URL(location.href); if (code) u.searchParams.set('room', code); else u.searchParams.delete('room'); history.replaceState(null, '', u.toString()); } catch (e) {} }
 export const NET = {
+  version: VERSION,
   role: null,          // null — одиночная игра; 'host' — ведущий; 'client' — гость
   id: 'H',             // мой номер в комнате: у ведущего 'H'
   code: '',
@@ -57,7 +61,7 @@ NET.create = function (cb) { NET.leave(true); const code = makeCode(); NET.statu
   loadIce().then(() => hostOpen(code, cb)); };
 function hostOpen(code, cb) {
   peer = new window.Peer(PREFIX + code, peerOpts());
-  peer.on('open', () => { NET.role = 'host'; NET.id = 'H'; NET.code = code; NET.status = ''; lobbyChanged(); cb && cb(null, code); });
+  peer.on('open', () => { NET.role = 'host'; NET.id = 'H'; NET.code = code; NET.status = ''; roomUrl(code); lobbyChanged(); cb && cb(null, code); });
   peer.on('connection', conn => { conn.on('open', () => hostAccept(conn)); });
   peer.on('error', e => { if (e.type === 'unavailable-id') { peer.destroy(); return NET.create(cb); } NET.status = netErr(e); onStatus(); if (!NET.role) cb && cb(NET.status); });
   peer.on('disconnected', () => { if (peer && !peer.destroyed) try { peer.reconnect(); } catch (e) {} }); }
@@ -66,17 +70,17 @@ NET.join = function (code, cb) { NET.leave(true); code = code.trim().toUpperCase
   loadIce().then(() => guestOpen(code, cb)); };
 function guestOpen(code, cb) {
   peer = new window.Peer(undefined, peerOpts());
-  peer.on('open', () => { const conn = peer.connect(PREFIX + code, { reliable: true, serialization: 'json' }); let ok = false;
+  peer.on('open', () => { NET.status = `Сервер-сводник на связи. Ждём ответа ведущего комнаты ${code}…`; onStatus(); const conn = peer.connect(PREFIX + code, { reliable: true, serialization: 'json' }); let ok = false;
     // ведущий ответил, но браузеры не пробились друг к другу — это не «нет комнаты», а сеть: говорим, что делать
     const NOPATH = 'Комната нашлась, но браузеры не смогли соединиться напрямую. Так бывает со строгим роутером, мобильным интернетом или VPN. Выключите VPN у обоих, поменяйтесь ролями (комнату создаёт другой) или подключитесь через другую сеть, например раздачу с телефона';
     let bad = 0, answered = false; const fail = msg => { if (ok) return; ok = true; clearTimeout(t); clearInterval(w); NET.status = msg; onStatus(); cb && cb(msg); NET.leave(true); };
-    const w = setInterval(() => { const pc = conn.peerConnection; if (!pc) return; if (pc.remoteDescription) answered = true; const st = pc.iceConnectionState; bad = st === 'failed' || st === 'disconnected' ? bad + 1 : 0; if (bad >= 4 && !NET.relay()) fail(NOPATH); else if (bad >= 8) fail(NOPATH); }, 1000);
-    const t = setTimeout(() => fail(answered ? NOPATH : 'Комната не отвечает. Проверьте код или попросите ведущего создать её заново'), 25000);
-    conn.on('open', () => { ok = true; clearTimeout(t); clearInterval(w); hostConn = conn; NET.role = 'client'; NET.code = code; NET.status = ''; q('H', ['hello', helloInfo()]); flush(); cb && cb(null, code); });
+    const w = setInterval(() => { const pc = conn.peerConnection; if (!pc) return; if (pc.remoteDescription && !answered) { answered = true; NET.status = 'Ведущий ответил. Соединяемся напрямую…'; onStatus(); } const st = pc.iceConnectionState; bad = st === 'failed' || st === 'disconnected' ? bad + 1 : 0; if (bad >= 4 && !NET.relay()) fail(NOPATH); else if (bad >= 8) fail(NOPATH); }, 1000);
+    const t = setTimeout(() => fail(answered ? NOPATH : `Ведущий комнаты ${code} не ответил. Проверьте, что код свежий (он виден у ведущего в блоке «Комната»), что у ведущего открыта игра и он не закрыл комнату`), 25000);
+    conn.on('open', () => { ok = true; clearTimeout(t); clearInterval(w); hostConn = conn; NET.role = 'client'; NET.code = code; NET.status = ''; roomUrl(code); q('H', ['hello', helloInfo()]); flush(); cb && cb(null, code); });
     conn.on('data', d => recvList('H', d)); conn.on('close', () => hostGone()); conn.on('error', () => hostGone()); });
-  peer.on('error', e => { NET.status = e.type === 'peer-unavailable' ? 'Комнаты с таким кодом нет' : netErr(e); onStatus(); cb && cb(NET.status); NET.leave(true); }); };
+  peer.on('error', e => { NET.status = e.type === 'peer-unavailable' ? `Комнаты ${code} нет: её закрыли или код неверный. Попросите у ведущего свежую ссылку из блока «Комната»` : netErr(e); onStatus(); cb && cb(NET.status); NET.leave(true); }); }
 function netErr(e) { return e.type === 'network' || e.type === 'server-error' || e.type === 'socket-error' ? 'Нет связи с сервером-сводником. Проверьте интернет' : e.type === 'browser-incompatible' ? 'Браузер не поддерживает прямое соединение' : 'Ошибка связи: ' + e.type; }
-NET.leave = function (quiet) { const was = NET.role; if (NET.host) for (const p of NET.peers.values()) try { p.conn.close(); } catch (e) {}
+NET.leave = function (quiet) { const was = NET.role; roomUrl(null); if (NET.host) for (const p of NET.peers.values()) try { p.conn.close(); } catch (e) {}
   if (hostConn) try { hostConn.close(); } catch (e) {} hostConn = null; if (peer) try { peer.destroy(); } catch (e) {} peer = null;
   NET.peers.clear(); for (const g of NET.ghosts.values()) dropGhost(g); NET.ghosts.clear(); NET.role = null; NET.code = ''; NET.inGame = false; NET.lobby = []; byNid.clear();
   if (A) A.netGone(was, quiet); if (!quiet) lobbyChanged(); };
@@ -89,7 +93,7 @@ function hostAccept(conn) { if (NET.peers.size >= 19) { conn.send([['full']]); s
   const id = 'c' + (++ptC); const p = { id, conn, nick: '…', ship: null, ready: false, info: {} }; NET.peers.set(id, p);
   conn.on('data', d => recvList(id, d)); conn.on('close', () => peerGone(id)); conn.on('error', () => peerGone(id)); }
 function peerGone(id) { const p = NET.peers.get(id); if (!p) return; NET.peers.delete(id); const g = NET.ghosts.get(id); if (g) { dropGhost(g); NET.ghosts.delete(id); } if (A && p.nick) A.log(`${p.nick} покинул комнату`, '#ffb4a0'); toAll(['left', id]); lobbyChanged(); if (A) A.modalCheck(); }
-function helloInfo() { const L = A.L; return { nick: L.nick || 'Капитан', ship: L.chosen ? L.ship : null, spec: L.spec, weapons: L.weapons, stage: L.stage, ready: !!A.ready }; }
+function helloInfo() { const L = A.L; return { v: VERSION, nick: L.nick || 'Капитан', ship: L.chosen ? L.ship : null, spec: L.spec, weapons: L.weapons, stage: L.stage, ready: !!A.ready }; }
 NET.sendMe = () => { if (NET.client) q('H', ['me', helloInfo()]); else if (NET.host) lobbyChanged(); };
 function lobbyChanged() { if (NET.host) { const me = Object.assign({ id: 'H', host: true }, helloInfo()); NET.lobby = [me, ...[...NET.peers.values()].filter(p => p.hello).map(p => Object.assign({ id: p.id }, p.info))]; toAll(['lobby', { list: NET.lobby, mission: A.L.mission, inGame: NET.inGame }]); } onLobby(); }
 
@@ -98,7 +102,7 @@ function recvList(from, raw) { const list = unchunk(from, raw); if (!Array.isArr
 function recv(from, [t, d, e]) {
   if (NET.host && from !== 'H') { const p = NET.peers.get(from); if (!p) return;
     switch (t) {
-      case 'hello': p.hello = true; p.info = d; p.nick = d.nick; q(from, ['welcome', { id: from, mission: A.L.mission, inGame: NET.inGame, code: NET.code }]); lobbyChanged(); if (NET.inGame) A.lateJoin(from); A.log(`${d.nick} в комнате`, '#d6f23a'); return;
+      case 'hello': if (d.v !== VERSION) { q(from, ['oldver', VERSION]); if (A) A.log(`У капитана ${d.nick} другая версия игры: пусть обновит страницу (Ctrl+F5)`, '#ffb4a0'); } p.hello = true; p.info = d; p.nick = d.nick; q(from, ['welcome', { id: from, mission: A.L.mission, inGame: NET.inGame, code: NET.code }]); lobbyChanged(); if (NET.inGame) A.lateJoin(from); A.log(`${d.nick} в комнате`, '#d6f23a'); return;
       case 'me': p.info = d; p.nick = d.nick; lobbyChanged(); return;
       case 'ps': return ghostState(from, d);
       case 'hit': return A.netHit(d, from);
@@ -113,6 +117,7 @@ function recv(from, [t, d, e]) {
     case 'welcome': NET.id = d.id; A.L.mission = d.mission || A.L.mission; lobbyChanged(); return;
     case 'lobby': NET.lobby = d.list; if (d.mission && !NET.inGame) { A.L.mission = d.mission; A.setMission(d.mission); } onLobby(); return;
     case 'full': NET.status = 'Комната заполнена: в ней уже 20 капитанов'; onStatus(); return;
+    case 'oldver': NET.status = `У вас и у ведущего разные версии игры (у вас ${VERSION}, у ведущего ${d}). Обновите страницу: Ctrl+F5`; onStatus(); return;
     case 'left': { const g = NET.ghosts.get(d); if (g) { dropGhost(g); NET.ghosts.delete(d); } return; }
     case 'pl': return playersState(d);
     case 'ms': return A.netMobs(d);

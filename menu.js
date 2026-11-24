@@ -1,8 +1,8 @@
 // Меню: подготовка к вылету по шагам (корабль → оружие → способности → спецтехника → команда)
 // и то же меню в полёте по Esc — с вкладками и разделами полигона.
-import { THUMBS } from './thumbs.js';
-import { COINS } from './coins.js';
-import { LOOT } from './loot.js';
+import { THUMBS } from './thumbs.js?v=202611241600';
+import { COINS } from './coins.js?v=202611241600';
+import { LOOT } from './loot.js?v=202611241600';
 
 const NAMES = { mission: 'Миссия', lobby: 'Зал ожидания', ship: 'Корабль', weapons: 'Оружие', skills: 'Способности', gear: 'Спецтехника', crew: 'Команда', mobs: 'Мобы и боссы', shop: 'Лавка', catch: 'Улов и древесина', world: 'Острова и породы', keys: 'Управление' };
 const DT = ['Кинетический урон', 'Взрывной урон', 'Пробивной урон', 'Огонь', 'Ток'];
@@ -45,7 +45,7 @@ export function initHangar(api) {
   // ---------- игра с друзьями: комната по коду ----------
   const roomCode = (new URLSearchParams(location.search).get('room') || '').toUpperCase().slice(0, 4);
   let joinCode = roomCode, netBusy = false, copied = false;
-  function vRoom() { const st = NET.status ? `<p class="msg net-st" role="status">${esc(NET.status)}</p>` : '';
+  function vRoom() { const st = (NET.status ? `<p class="msg net-st" role="status">${esc(NET.status)}</p>` : '') + `<p class="lab net-v">Версия игры ${esc(NET.version)}</p>`;
     if (!NET.role) return `<section class="room"><h3 class="sec">Игра с друзьями</h3><p class="lead">Один создаёт комнату и отправляет друзьям код или ссылку. Остальные входят по коду. Сервер не нужен: браузеры соединяются напрямую. До 20 капитанов.</p>
       <div class="room-row"><button type="button" class="btn" data-act="room-new"${netBusy ? ' disabled' : ''}>Создать комнату</button><span class="or">или</span><label class="code"><span class="lab">Код комнаты</span><input id="hg-code" type="text" maxlength="4" autocomplete="off" spellcheck="false" value="${esc(joinCode)}" placeholder="ABCD"></label><button type="button" class="btn ghost" data-act="room-join"${netBusy ? ' disabled' : ''}>Войти</button></div>${st}</section>`;
     const n = NET.lobby.length || 1;
