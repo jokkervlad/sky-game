@@ -405,12 +405,13 @@ function bolt(ax, az, bx, bz, color = '#bfe8ff', jit = 22, w = 1.4) { NET.fx('bo
 function burst(x, z, r, color, n = 30) { NET.fx('burst', [x, z, r, color, n]); const g = glow(color); shockRing(x, z, r, hexN(color)); fire.emit({ x, y: PLANE + 6, z, life: 0.3, s0: r * 0.3, s1: r * 0.9, r: g[0], g: g[1], b: g[2], a: 0.5 }); for (let i = 0; i < n; i++) { const a = rnd() * 6.28, v = r * (0.8 + rnd() * 1.2); fire.emit({ x, y: PLANE + (rnd() - 0.5) * 10, z, vx: Math.cos(a) * v, vy: (rnd() - 0.3) * 30, vz: Math.sin(a) * v, life: 0.5 + rnd() * 0.4, s0: 12, s1: 3, r: g[0], g: g[1], b: g[2], a: 0.9, drag: 2 }); } }
 const zones = [];
 // установки (турель, мортирная башня, электромаяк, манок, обманка, дрон): у них есть прочность, мобы рядом их бьют
-function struct(zn, name, hp) { zn.struct = true; zn.hp = zn.max = hp; zn.name = name; zn.lbl = mkLabel('struct', name); return zn; }
+function struct(zn, name, hp) { zn.struct = true; zn.hp = zn.max = hp; zn.name = name; zn.lbl = mkLabel('struct', name); if (NET.client && !NET.mute) { zn.sid = ++sidC; NET.req('struct', [zn.sid, Math.round(zn.x), Math.round(zn.z), hp, name, zn.decoy ? 1 : 0, zn.life]); } return zn; }
+let sidC = 0;
 // сильнейшая цель в круге: босс, потом крупные, средние, мелкие; среди равных — у кого больше прочности
 function strongest(x, z, R) { let best = null, bk = -1; for (const m of mobs) { if (m.dead || dist2(x, z, m.x, m.z) > R) continue; const k = (m.boss ? 3 : (m.T.cls || 0)) * 1e6 + m.hp; if (k > bk) { bk = k; best = m; } } return best; }
 // зона: круг на облаках, живёт life секунд, раз в every вызывает tick
 // prop — модель в центре (имя из fx.js или готовый объект), py — её высота над плоскостью полёта, dome — купол, smoke/dens — частицы
-function zone(o) { if (!o.follow && (!o.prop || typeof o.prop === 'string')) NET.fx('zone', [{ x: o.x, z: o.z, r: o.r, life: o.life, color: o.color, prop: o.prop, py: o.py, ps: o.ps, fill: o.fill, spin: o.spin, smoke: o.smoke, dens: o.dens, pcol: o.pcol, dome: o.dome }]); const dec = FX.decal(o.r, o.color, o.fill ?? 0.5, o.spin || 0); dec.position.set(o.x, PLANE - 5, o.z); scene.add(dec); const parts = [dec];
+function zone(o) { if (!o.follow) NET.fx('zone', [{ x: o.x, z: o.z, r: o.r, life: o.life, color: o.color, prop: typeof o.prop === 'string' ? o.prop : undefined, py: o.py, ps: o.ps, fill: o.fill, spin: o.spin, smoke: o.smoke, dens: o.dens, pcol: o.pcol, dome: o.dome }]); const dec = FX.decal(o.r, o.color, o.fill ?? 0.5, o.spin || 0); dec.position.set(o.x, PLANE - 5, o.z); scene.add(dec); const parts = [dec];
   let post = null; if (o.prop) { post = typeof o.prop === 'string' ? FX.prop(o.prop, o.color) : o.prop; post.position.set(o.x, PLANE + (o.py ?? 4), o.z); post.userData.base = post.position.clone(); scene.add(post); parts.push(post); }
   let domeM = null; if (o.dome) { domeM = FX.dome(o.r, o.color, o.dome === 'ball'); domeM.position.set(o.x, PLANE, o.z); scene.add(domeM); parts.push(domeM); }
   const zn = Object.assign({ t: 0, acc: 0, pacc: 0, every: 0.5, g: glow(o.color), dens: 0 }, o, { dec, post, domeM, parts }); zones.push(zn); return zn; }
@@ -422,7 +423,7 @@ function updateZones(dt) { for (let i = zones.length - 1; i >= 0; i--) { const z
     if (zn.struct) { if (zn.hp <= 0 && !zn.dead) { zn.dead = true; burst(zn.x, zn.z, 60, '#ff8a6a', 20); log(`${zn.name}: разрушено`, '#ffb4a0'); } zn.lbl.firstChild.textContent = `${zn.name} ${Math.max(0, Math.ceil(zn.hp))}`; zn.lbl.querySelector('i').style.width = Math.max(0, zn.hp / zn.max * 100) + '%'; place(zn.lbl, zn.x, PLANE + 46, zn.z); }
     zn.pacc += zn.dens * 40 * dt; while (zn.pacc >= 1) { zn.pacc -= 1; const a = rnd() * 6.28, r = Math.sqrt(rnd()) * zn.r * (zn.smoke ? 0.85 : 1); const c = zn.pcol || zn.g; (zn.smoke ? smoke : fire).emit({ x: zn.x + Math.cos(a) * r, y: PLANE + (zn.ph ?? (rnd() - 0.3) * 14), z: zn.z + Math.sin(a) * r, vx: zn.smoke ? (rnd() - 0.5) * 10 : 0, vy: zn.pvy ?? (zn.smoke ? 6 : 16), vz: zn.smoke ? (rnd() - 0.5) * 10 : 0, life: (zn.smoke ? 2.2 : 0.7) + rnd() * 0.6, s0: zn.smoke ? 50 : 9, s1: zn.smoke ? 120 : 3, r: c[0], g: c[1], b: c[2], a: zn.smoke ? 0.5 : 0.85 }); }
     while (zn.acc >= zn.every) { zn.acc -= zn.every; if (zn.tick) zn.tick(zn); }
-    if (zn.dead || zn.t >= zn.life) { if (zn.end) zn.end(zn); if (zn.lbl) zn.lbl.remove(); for (const q of zn.parts) { scene.remove(q); FX.release(q); } zones.splice(i, 1); } } }
+    if (zn.dead || zn.t >= zn.life) { if (zn.end) zn.end(zn); if (zn.sid) NET.req('structEnd', zn.sid); if (zn.lbl) zn.lbl.remove(); for (const q of zn.parts) { scene.remove(q); FX.release(q); } zones.splice(i, 1); } } }
 // эффекты, привязанные к кораблю или к мобу: живут, пока alive() возвращает true
 const attach = [];
 function stick(obj, pos, alive, anim) { scene.add(obj); pos(obj); attach.push({ obj, pos, alive, anim, t: 0 }); return obj; }
@@ -852,19 +853,21 @@ function update(dt) {
   for (const o of objects) if (o.kind !== 'shell') o.cd = Math.max(0, o.cd - dt);
   updateOrbs(dt); if (lootT > 0) { lootT -= dt; if (lootT <= 0) $('loot').style.display = 'none'; } if (toastT > 0) { toastT -= dt; if (toastT <= 0) $('toast').style.display = 'none'; } if (storyT > 0) { storyT -= dt; if (storyT <= 0) $('story').style.display = 'none'; }
   updateAuto(); updateZones(dt); updateAttach(dt); updateWebs(dt); for (let i = laters.length - 1; i >= 0; i--) { const q = laters[i]; q.t -= dt; if (q.t <= 0) { laters.splice(i, 1); q.fn(); } } MIS.tick(dt);
-  const hidden = P.dive > 0 || zones.some(zn => zn.hide && dist2(P.x, P.z, zn.x, zn.z) < zn.r + 10); const decoy = zones.find(zn => zn.decoy && !zn.dead);
+  const hidden = P.dive > 0 || zones.some(zn => zn.hide && dist2(P.x, P.z, zn.x, zn.z) < zn.r + 10); const SL = PH.size ? zones.concat([...PH.values()]) : zones, decoys = SL.filter(zn => zn.decoy && !zn.dead && !(zn.hp <= 0));
   // мобы
   leechN = 0; fogNear = false;
   if (NET.client) clientMobs(dt); else for (const m of mobs) {
     if (m.dead) { if (m.fade !== 0) corpse(m, dt); if (m.gone) continue; if (m.respawn) { m.rt -= dt; if (m.rt <= 0 && m.fade === 0 && dist2(TP.x, TP.z, m.hx, m.hz) > 500) { m.dead = 0; m.hp = m.max; m.x = m.hx; m.z = m.hz; m.aggro = false; m.mesh.visible = true; m.mesh.rotation.z = 0; m.mesh.scale.setScalar(m.sc); m.lbl.firstChild.textContent = m.name; m.lbl.classList.remove('loot'); pauseModel(m.mesh, false); m.far = null; } } continue; }
     TP = NET.live ? pickTarget(m) : P;
+    // манок и обманка тянут к себе мелких и средних: ближайшая из всех, кто бы её ни поставил
+    let decoy = null; if (decoys.length) { let dd = 1e9; for (const q of decoys) { const e = dist2(q.x, q.z, m.x, m.z); if (e < dd) { dd = e; decoy = q; } } }
     const T = m.T, ai = T.ai; for (const k of ['stun', 'slow', 'mark', 'acid', 'blind', 'weak', 'noheal', 'open', 'shell', 'tauntT']) if (m[k] > 0) m[k] -= dt;
     if (m.still) { if (m.burn > 0) { m.burn -= dt; m.bt -= dt; if (m.bt <= 0) { m.bt = 0.5; hitMob(m, 5, 3, { dot: true, color: '#FF4500' }); } } if (!m.dead) { m.mesh.position.set(m.x, PLANE + 10, m.z); m.aggro = false; } continue; }
     if (m.burn > 0) { m.burn -= dt; m.bt -= dt; if (m.bt <= 0) { m.bt = 0.5; hitMob(m, 5, 3, { dot: true, color: '#FF4500' }); if (m.dead) continue; } fire.emit({ x: m.x + (rnd() - 0.5) * m.r, y: PLANE + rnd() * m.r * 0.5, z: m.z + (rnd() - 0.5) * m.r, vy: 30, life: 0.5, s0: 12, s1: 3, r: 3, g: 1, b: 0.1, a: 0.9 }); }
     const dx = TP.x - m.x, dz = TP.z - m.z; const d = Math.hypot(dx, dz); { const far = d > 1300, hm = !!m.mesh.userData.model; if (far !== m.far || hm !== m.hm) { m.far = far; m.hm = hm; pauseModel(m.mesh, far); } } const dm = m.dmgMul * (m.weak > 0 ? 0.8 : 1); const pd = { from: m }; if (T.sp === 'fog' && d < 420) fogNear = true; m.mesh.visible = !FOG.vis || d < FOG.vis + 40;
     if (!SEE || (m.aggro && (TP.dead || (TP === P ? hidden : TP.hide) || d > 1000))) m.aggro = false;
     let vx = 0, vz = 0, want = m.yaw; m.cd -= dt; m.cd2 -= dt; const spd = T.speed * (m.slow > 0 ? (m.boss ? 0.5 : 0.6) : 1);
-    if (m.aggro && !m.boss && (!m.tgt || m.tgt.struct)) { if (m.tgt && (m.tgt.dead || m.tgt.hp <= 0)) m.tgt = null; m.zt = (m.zt || 0) - dt; if (m.zt <= 0) { m.zt = 1.5; let best = null, bd = Math.min(d, 280); for (const zn of zones) if (zn.struct && !zn.dead && !zn.decoy) { const q = Math.hypot(zn.x - m.x, zn.z - m.z); if (q < bd) { bd = q; best = zn; } } m.tgt = best; } }
+    if (m.aggro && !m.boss && (!m.tgt || m.tgt.struct)) { if (m.tgt && (m.tgt.dead || m.tgt.hp <= 0)) m.tgt = null; m.zt = (m.zt || 0) - dt; if (m.zt <= 0) { m.zt = 1.5; let best = null, bd = Math.min(d, 280); for (const zn of SL) if (zn.struct && !zn.dead && !zn.decoy) { const q = Math.hypot(zn.x - m.x, zn.z - m.z); if (q < bd) { bd = q; best = zn; } } m.tgt = best; } }
     if (m.stun > 0) { m.lunge = 0; m.wind = 0; m.slam = 0; m.beam = 0; m.cast = 0; m.grab = 0; m.pull = 0; m.at = 0; }
     else if (m.aggro && decoy && !m.boss && T.cls < 2) { want = Math.atan2(decoy.x - m.x, decoy.z - m.z); if (dist2(m.x, m.z, decoy.x, decoy.z) > m.r + 20) { vx = Math.sin(want) * spd; vz = Math.cos(want) * spd; } else if (decoy.struct && (m.tcd = (m.tcd || 0) - dt) <= 0) { m.tcd = 1.5; decoy.hp -= Math.max(8, T.dmg * 0.5) * dm; bolt(m.x, m.z, decoy.x, decoy.z, '#ff8a6a', 6, 0.8); } }
     else if (m.aggro && m.tgt && m.tgt.hp > 0) { const tx = m.tgt.x - m.x, tz = m.tgt.z - m.z, td = Math.hypot(tx, tz) || 1, reach = m.r + (ai === 'shoot' || ai === 'beam' ? 220 : 55); want = Math.atan2(tx, tz); m.tcd = (m.tcd || 0) - dt;
@@ -892,7 +895,7 @@ function update(dt) {
     m.mesh.position.set(m.x, PLANE + Math.sin(time * 1.3 + m.hx) * 2.5 + (ai === 'heavy' && !m.boss ? -4 : 0) + (m.wind > 0 ? 6 : 0), m.z); m.mesh.rotation.y = m.yaw;
   }
   TP = P;
-  P.leech = leechN; updateFog(dt);
+  P.leech = leechN; if (PH.size) phantomTick(dt); updateFog(dt);
   updateShots(dt);
   for (let i = warns.length - 1; i >= 0; i--) { const w = warns[i]; w.t += dt; w.m.material.opacity = 0.35 + 0.55 * Math.abs(Math.sin(w.t * 14)); if (w.t >= w.dur) { scene.remove(w.m); warns.splice(i, 1); } }
   updateWorldFx(dt);
@@ -1033,6 +1036,11 @@ function roar(id) { const p = id === 'H' ? P : NET.ghosts.get(id) && NET.ghosts.
 // чужой заслон: синий купол вокруг корабля союзника
 function ghostFx(g, dt, drop) { const on = !drop && !g.dead && (g.fl & 32); if (on && !g.cov) { g.cov = FX.dome(40, SKILL_COL['S-04'], true); scene.add(g.cov); } if (!on && g.cov) { scene.remove(g.cov); FX.release(g.cov); g.cov = null; }
   if (g.cov) { g.cov.position.set(g.x, PLANE + 2, g.z); g.cov.material.uniforms.uT.value = time; g.cov.material.uniforms.uFade.value = 1; } }
+// Копии установок гостей у ведущего: мобы видят их так же, как свои (идут бить, если ближе корабля; манок и обманку — всегда).
+// Урон по копии уходит хозяину, его установка разрушается у него и сообщает, что её больше нет
+const PH = new Map();
+function phantomTick(dt) { for (const [k, q] of PH) { q.t += dt; if (q.t > q.life + 2 || !NET.ghosts.has(q.owner)) { PH.delete(k); continue; } if (q.hp <= 0) q.dead = true;
+    if (Math.round(q.hp) !== Math.round(q.sent)) { q.sent = q.hp; NET.tell(q.owner, 'structHp', [q.sid, Math.max(0, Math.round(q.hp))]); } } }
 // --- ведущий ---
 function netHit([nid, dmg, type, crit, dot, melt], from) { const m = NET.byNid.get(nid); if (!m || m.dead) return; let k = 1; if (m.boss && MIS.bossBright()) k *= 1.15; if (m.boss && MIS.bossDim()) k *= 0.5;
   if (melt && m.shell > 0) { m.shell = 0; burst(m.x, m.z, m.r + 30, '#ffb030', 24); log('Огонь растопил смоляной панцирь', '#ffe08a'); }
@@ -1050,6 +1058,8 @@ function netReq(t, d, from) { const g = NET.ghosts.get(from), gp = g && g.proxy;
     case 'ok': if (modalCur && modalCur.mid === d) modalAck(modalCur, from); return;
     case 'pause': return setPause(!!d);
     case 'roar': return roar(from);
+    case 'struct': { const [sid, x, z, hp, name, decoy, life] = d; PH.set(from + ':' + sid, { struct: true, ph: true, owner: from, sid, x, z, hp, max: hp, name, decoy: !!decoy, life: life || 20, t: 0, sent: hp }); return; }
+    case 'structEnd': PH.delete(from + ':' + d); return;
   } }
 let hsLast = {}; const mfire = [], REC = new Set(), OBST = []; let pidC = 0, recC = 0, oidC = 0;
 function hostState() { const send = (k, v) => { const j = JSON.stringify(v); if (hsLast[k] !== j) { hsLast[k] = j; NET.bcast(k, v); } };
@@ -1149,6 +1159,7 @@ function netMsg(t, d) { switch (t) {
   case 'dropObst': return dropObst(d);
   case 'obst': return syncObst(d);
   case 'respawn': if (P.dead) { P.revive = 0; P.dead = 0.001; } return;
+  case 'structHp': { const zn = zones.find(q => q.sid === d[0]); if (zn) zn.hp = Math.min(zn.hp, d[1]); return; }
   case 'tp': P.x = d[0]; P.z = d[1]; P.speed = 0; P.dvx = 0; P.dvz = 0; first = true; return;
 } }
 function netPeer(from, t, d) { const g = NET.ghosts.get(from), nick = g ? g.nick : 'Союзник';
@@ -1214,5 +1225,5 @@ let last = performance.now(), frames = 0, fpsT = 0;
 function frame(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; if (window.__freeze) { requestAnimationFrame(frame); return; } if (!window.__pause && (!hangarOpen || (NET.live && NET.inGame)) && !paused && !modalOn) update(dt); render(dt); NET.tick(dt); frames++; fpsT += dt; if (fpsT > 0.5) { $('fps').textContent = Math.round(frames / fpsT) + ' к/с'; frames = 0; fpsT = 0; } window.__frames = (window.__frames || 0) + 1; requestAnimationFrame(frame); }
 log(`Мобы и боссы пока вас не видят. ${keyName(KEY.menu)}: ангар — корабль, умения, техника, мобы, лавка, клавиши.`);
 if (STILL) { window.__pause = true; window.__g = { info: renderer.info, MIS, makeTreeSpot, makePond, okAll() { let n = 0; while (modalOn && n++ < 20) $('modal-ok').click(); return n; }, get modalOn() { return modalOn; }, warm, interact, trail, fire, smoke, islands, goTo, places, setTier, get tier() { return tier; }, P, S, L, D, KEY, slots: () => slots, mobs, objects, res, shots, zones, attach, FOG, setFog, sleepNow, webs, cloud, sun, scene, keys, use, setShip(id) { L.ship = id; recompute(true); setShipModel(); }, get flames() { return flames.length; }, setQ(n) { q = n; applyQ(); }, useSkill(id) { return useSkill({ id }); }, useDevice(id) { return useDevice({ id }); }, fireWeapon(id) { return fireWeapon({ id }); }, story, get inspect() { return inspect; }, set inspect(m) { inspect = m; inspDirty = true; }, interact, cycleTarget, dash, orbs, addMob, hitMob, damagePlayer, finish, recompute, swapSlot, openHangar, hangar, shop, flood, camera, sim(n, dt = 1 / 30) { for (let i = 0; i < n; i++) update(dt); }, render, cam(y, p, d) { camYaw = y; camPitch = p; camDist = d; first = true; }, get target() { return target; }, set target(m) { target = m; }, get channel() { return channel; }, set see(v) { SEE = v; } }; }
-window.__net = { NET, P, S, L, mobs, hitMob, spawnMob, useSkill: id => useSkill({ id }), get towing() { return towing; }, get target() { return target; }, objects, MIS, res, shop, get tier() { return tier; }, get modalOn() { return modalOn; }, get paused() { return paused; }, use, interact, finish, damagePlayer, keys, get channel() { return channel; }, zones, FOG };
+window.__net = { NET, P, S, L, mobs, hitMob, spawnMob, useSkill: id => useSkill({ id }), useDevice: id => useDevice({ id }), zonesL: zones, get towing() { return towing; }, get target() { return target; }, objects, MIS, res, shop, get tier() { return tier; }, get modalOn() { return modalOn; }, get paused() { return paused; }, use, interact, finish, damagePlayer, keys, get channel() { return channel; }, zones, FOG };
 requestAnimationFrame(frame);
