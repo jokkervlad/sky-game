@@ -305,7 +305,7 @@ function drawInspect() { const el = $('inspect'); if (inspect && (inspect.dead |
 const inR = (x, z, r) => mobs.filter(m => !m.dead && dist2(x, z, m.x, m.z) < r + m.r);
 // урон по мобу: type — 0 КИН, 1 ВЗР, 2 ПРБ, 3 ОГН, 4 ТОК; броня моба задаёт множитель
 function hitMob(m, dmg, type = 0, o = {}) { if (!m || m.dead) return 0; let k = o.pierce ? 1.5 : D.ARMOR[m.arm].m[type]; let crit = false;
-  if (!o.dot) { k *= S.dmg; if (P.buffW > 0) k *= 1.2; if (P.fDmg > 0) k *= 1.15; if (P.cry > 0) k *= 1.15; if (P.anchor > 0) k *= 1.3; if (has('F-09') && P.still > 2) k *= 1.3; if (P.over > 0) k *= 1.15; if (has('F-30') && P.hp < S.hp * 0.25) k *= 1.3; if (has('F-15') && m.hp < m.max * 0.3) k *= 1.35; if (P.gambit > 0 || (has('F-13') && rnd() < 0.2)) { k *= 2; crit = true; } }
+  if (!o.dot) { k *= S.dmg; if (P.buffW > 0) k *= 1.2; if (P.fDmg > 0) k *= 1.15; if (P.cry > 0) k *= 1.15; if (P.anchor > 0) k *= 1.3; if (has('F-09') && P.still > 2) k *= 1.3; if (P.over > 0) k *= 1.15; if (P.allyCmd) k *= 1.1; if (has('F-30') && P.hp < S.hp * 0.25) k *= 1.3; if (has('F-15') && m.hp < m.max * 0.3) k *= 1.35; if (P.gambit > 0 || (has('F-13') && rnd() < 0.2)) { k *= 2; crit = true; } }
   if (m.mark > 0) k *= 1.2; if (m.acid > 0) k *= 1.25; if (m.open > 0) k *= 2;
   let melt = 0; if (m.shell > 0) { if (type === 3) { m.shell = 0; melt = 1; burst(m.x, m.z, m.r + 30, '#ffb030', 24); log('Огонь растопил смоляной панцирь', '#ffe08a'); } else { k *= 0.4; if (time - (m.shT || -9) > 1.5) { m.shT = time; floatText('смола', '#ffb030', m.x, PLANE + 26 + m.r, m.z); } } }
   if ((m.T.sp === 'shield' || m.T.sp === 'back') && !o.dot && m.stun <= 0) { let a = Math.atan2(P.x - m.x, P.z - m.z) - m.yaw; a = Math.abs(Math.atan2(Math.sin(a), Math.cos(a))); if (m.T.sp === 'shield' && a < 1.0) { k *= 0.25; floatText('щит', '#9fe8ff', m.x, PLANE + 26 + m.r, m.z); } else if (m.T.sp === 'back' && a > 2.0) { k *= 2; floatText('в спину', '#ffe08a', m.x, PLANE + 26 + m.r, m.z); } }
@@ -339,7 +339,9 @@ function die() { MIS.onDeath(); P.hp = 0; P.dead = waitRevive() ? 1e9 : 5; P.rev
 function damagePlayer(dmg, why, type = 0, o = {}) { if (P.dead || P.dive > 0) return;
   if (!o.raw) { if (has('F-31') && rnd() < 0.12) return floatText('уворот', '#9fe8ff', P.x, PLANE + 22, P.z); if (has('F-22') && P.bubble <= 0) { P.bubble = 22; ball(34, '#8fe8ff', null, 0.7); shockRing(P.x, P.z, 40, 0x9fe8ff); return floatText('щит', '#9fe8ff', P.x, PLANE + 22, P.z); }
     let k = D.ARMOR[S.arm].m[type] * Math.max(0.2, 1 - D.ARMOR_PCT * S.armor); if (P.buffA > 0) k *= 0.8; if (P.fArm > 0) k *= 0.85; if (P.wArm > 0) k *= 0.9; if (P.will > 0) k *= 0.3; if (P.bots > 0) k *= 0.75; if (has('F-09') && P.still > 2) k *= 1.2; if (P.gambit > 0) k *= 1.25; if (type === 3 && has('F-29')) k *= 0.5; dmg *= k; }
-  P.lastHit = time; dmg = Math.max(1, Math.round(dmg)); P.hp -= dmg; floatText('-' + dmg, '#ff7a66', P.x, PLANE + 22, P.z);
+  P.lastHit = time; dmg = Math.max(1, Math.round(dmg));
+  if (coverBy && P.allyCov && !o.cover) { const half = Math.round(dmg * 0.5); if (half > 0) { dmg -= half; NET.toPeer(coverBy.id, 'cover', [half, why]); } }
+  P.hp -= dmg; floatText('-' + dmg, '#ff7a66', P.x, PLANE + 22, P.z);
   if (o.from && !o.from.dead) { if (has('F-17') && o.melee) hitMob(o.from, dmg * 0.35, 0, { dot: true }); if (has('CREW-09') && P.shock <= 0) { P.shock = 15; bolt(P.x, P.z, o.from.x, o.from.z, '#7DF9FF'); hitMob(o.from, 80, 4, { dot: true, color: '#7DF9FF' }); } }
   if (P.hp <= 0) { if (has('F-16') && !P.second) { P.second = true; P.hp = Math.round(S.hp * 0.25); shockRing(P.x, P.z, 90, 0xffd24a); log('Вторая жизнь: корабль встал сам с 25 % корпуса', '#ffd24a'); } else if (shop.lv.life > 0) { shop.lv.life = 0; P.hp = Math.round(S.hp / 3); shockRing(P.x, P.z, 90, 0xffd24a); log('Запасной котёл: корабль встал сам с третью корпуса', '#ffd24a'); } else die(); } }
 
@@ -524,6 +526,8 @@ function useDevice(sl) { const id = sl.id, col = D.DEVICES[id].color, c = { colo
   else NET();
   return true; }
 function useSkill(sl) { const id = sl.id, k = D.SKILLS[id], col = SKILL_COL[id] || '#ffd58a', c = { color: col }; const fx = () => burst(P.x, P.z, 60, col, 24);
+  if (id === 'S-04') { P.cover = 7.5; ball(40, col, 'cover'); fx(); log(NET.players().some(g => !g.dead && dist2(P.x, P.z, g.x, g.z) < 200) ? 'Заслон: половину урона союзников рядом корабль берёт на себя' : 'Заслон поднят: прикроет союзников, которые окажутся рядом', txt(col)); return true; }
+  if (id === 'S-05') { P.roar = 9; fx(); shockRing(P.x, P.z, 300, hexN(col)); if (NET.client) NET.req('roar', 1); else roar('H'); log('Рёв двигателей: враги рядом девять секунд бросаются на вас', txt(col)); return true; }
   if (k.net) { if (NET.live && (id === 'S-07' || id === 'S-08' || id === 'S-21')) return netSkill(id, col); fx(); log(NET.live ? `${k.name}: пока только эффект` : `${k.name}: нужен союзник, работает в сетевой игре`, txt(col)); return true; }
   if (id === 'S-01') { P.rapid = 9; fx(); }
   else if (id === 'S-02') { P.pierce = true; fx(); log('Следующий залп пушек пробьёт броню'); }
@@ -730,7 +734,7 @@ let leechN = 0, fogNear = false; const webs = [], laters = [];
 function later(t, fn) { laters.push({ t, fn }); }
 const webGeo = new THREE.RingGeometry(0.12, 1, 14, 5).rotateX(-Math.PI / 2), webMat = new THREE.MeshBasicMaterial({ color: 0xf2f2ea, wireframe: true, transparent: true, opacity: 0.75, depthWrite: false });
 function addWeb(x, z) { NET.fx('addWeb', [x, z]); const m = new THREE.Mesh(webGeo, webMat); m.position.set(x, PLANE - 3, z); m.scale.setScalar(85); m.rotation.y = rnd() * 6.28; m.renderOrder = 12; scene.add(m); webs.push({ x, z, r: 85, t: 12, m }); }
-function updateWebs(dt) { let ins = false; for (let i = webs.length - 1; i >= 0; i--) { const w = webs[i]; w.t -= dt; const me = !P.dead && dist2(P.x, P.z, w.x, w.z) < w.r; if (me && (P.flame > 0 || P.trail > 0)) { w.t = 0; burst(w.x, w.z, w.r, '#FF8C00', 16); log('Паутина сгорела', '#ffb070'); } if (w.t <= 0) { scene.remove(w.m); webs.splice(i, 1); continue; } if (me) ins = true; } if (ins && !P.web) log('Корабль увяз в паутине: её сжигает огнемёт или зажигательный след', '#ffb4a0'); P.web = ins ? 1 : 0; }
+function updateWebs(dt) { let ins = false; for (let i = webs.length - 1; i >= 0; i--) { const w = webs[i]; w.t -= dt; const me = !P.dead && dist2(P.x, P.z, w.x, w.z) < w.r; if (me && (P.flame > 0 || P.trail > 0)) { w.t = 0; burst(w.x, w.z, w.r, '#FF8C00', 16); log('Паутина сгорела', '#ffb070'); } if (w.t <= 0) { scene.remove(w.m); webs.splice(i, 1); continue; } if (me) ins = true; } if (ins && !P.web && !has('F-19')) log('Корабль увяз в паутине: её сжигает огнемёт или зажигательный след', '#ffb4a0'); P.web = ins ? 1 : 0; }
 function sleepNow(t) { if (P.dead || P.sleep > 0) return; P.sleep = t; P.speed *= 0.3; channel = null; log('Корабль уснул. В сети его будит толчок союзника, в одиночном полёте сон проходит сам', '#d8f07a'); }
 const SP = {
   boom(m, dt, d, dm, spd, want) { const moving = Math.abs(TP.speed) > 18 || TP.dashT > 0;
@@ -806,9 +810,9 @@ function update(dt) {
   // игрок
   if (P.dead > 0) { P.dead -= dt; $('dead-t').textContent = Math.ceil(P.dead); if (P.dead <= 0) { P.dead = 0; P.hp = P.revive ? Math.round(S.hp * P.revive) : S.hp; if (!P.revive) { [P.x, P.z] = MIS.cp(); P.x += teamSlot() * 40; } P.revive = 0; P.speed = 0; P.dvx = 0; P.dvz = 0; P.second = false; ship.visible = true; $('dead').style.display = 'none'; for (const m of mobs) m.aggro = false; first = true; log('Корабль снова в строю'); } }
   else {
-    for (const k of ['wind', 'buffW', 'buffA', 'cry', 'anchor', 'over', 'will', 'bots', 'gambit', 'dive', 'rapid', 'tail', 'burn', 'turbo', 'kit', 'fSpd', 'fArm', 'fDmg', 'wArm', 'wCd', 'wRep', 'mirror', 'bubble', 'shock', 'probe', 'bull', 'hex', 'sleep', 'ink', 'rot']) dec(k, dt);
+    for (const k of ['wind', 'buffW', 'buffA', 'cry', 'anchor', 'over', 'will', 'bots', 'gambit', 'dive', 'rapid', 'tail', 'burn', 'turbo', 'kit', 'fSpd', 'fArm', 'fDmg', 'wArm', 'wCd', 'wRep', 'mirror', 'bubble', 'shock', 'probe', 'bull', 'hex', 'sleep', 'ink', 'rot', 'cover', 'roar']) dec(k, dt);
     const sh = held('dash'); const turn = (sh || P.anchor > 0) ? 0 : (held('left') ? 1 : 0) - (held('right') ? 1 : 0); turnNow = turn;
-    const maxSp = 125 * S.speed * (P.fSpd > 0 ? 1.2 : 1) * (P.wind > 0 ? 1.3 : 1) * (P.tail > 0 ? 1.4 : 1) * (P.burn > 0 ? 2 : 1) * (P.turbo > 0 ? 3 : 1) * (P.cry > 0 ? 1.15 : 1) * (P.over > 0 ? 1.15 : 1) * (has('F-30') && P.hp < S.hp * 0.25 ? 1.3 : 1) * (P.web > 0 ? 0.4 : 1) * (1 - 0.1 * Math.min(5, P.leech || 0)); const accel = held('fwd') && !held('back') && P.anchor <= 0;
+    const maxSp = 125 * S.speed * (P.fSpd > 0 ? 1.2 : 1) * (P.wind > 0 ? 1.3 : 1) * (P.tail > 0 ? 1.4 : 1) * (P.burn > 0 ? 2 : 1) * (P.turbo > 0 ? 3 : 1) * (P.cry > 0 ? 1.15 : 1) * (P.over > 0 ? 1.15 : 1) * (has('F-30') && P.hp < S.hp * 0.25 ? 1.3 : 1) * (P.web > 0 && !has('F-19') ? 0.4 : 1) * (1 - 0.1 * Math.min(5, P.leech || 0)); const accel = held('fwd') && !held('back') && P.anchor <= 0;
     if (P.anchor > 0) P.speed = 0;
     else if (held('back')) P.speed = P.speed > 0 ? Math.max(0, P.speed - 140 * dt) : Math.max(-26, P.speed - 30 * dt);
     else if (accel) P.speed = Math.min(maxSp, P.speed + (P.speed < 0 ? 100 : 62) * (P.turbo > 0 ? 6 : P.burn > 0 ? 3 : 1) * dt); if (P.kit > 0) heal(14 * dt, true); if (P.wRep > 0) heal(2 * dt, true);
@@ -826,7 +830,7 @@ function update(dt) {
     for (const m of mobs) if (!m.dead) { const d = dist2(P.x, P.z, m.x, m.z); const rr = m.r + 14; if (d < rr) { const nx = (P.x - m.x) / (d || 1), nz = (P.z - m.z) / (d || 1); if (m.T.cls === 2 || m.boss) { P.x = m.x + nx * rr; P.z = m.z + nz * rr; } else { m.x = P.x - nx * rr; m.z = P.z - nz * rr; }
         if (P.bull > 0 && !m.bullHit) { m.bullHit = time; hitMob(m, 160, 0, { color: '#A0522D' }); m.stun = 3; m.kx = -nx * 300; m.kz = -nz * 300; }
         else if (sp0 > 30 && P.hitCd <= 0) { const dm = sp0 * 0.2; if (has('F-02')) hitMob(m, 120, 0); else { damagePlayer(dm, 'Таран', 0, { raw: true }); hitMob(m, dm * 2.2, 0); } m.kx = -nx * sp0 * 1.5; m.kz = -nz * sp0 * 1.5; P.hitCd = 0.9; P.speed *= 0.5; if (P.flood > 0) flood(P.flood - 1); } } if (m.bullHit && time - m.bullHit > 1) m.bullHit = 0; }
-    if (NET.live) shipBump(sp0);
+    if (NET.live) { shipBump(sp0); allyAuras(dt); towTick(dt); } else { P.allyRep = P.allyCmd = P.allyCov = 0; coverBy = null; }
     // пассивный ремонт: 1 в секунду; вне боя (30 с без урона и эффектов) — 3 в секунду
     { const calm = time - (P.lastHit ?? -99) > (has('CREW-03') ? 20 : D.REPAIR.calmAfter); if (P.hp < S.hp) P.hp = Math.min(S.hp, P.hp + ((calm ? D.REPAIR.calm * (has('CREW-03') ? 1.5 : 1) : D.REPAIR.base) + (has('F-26') ? 1.5 : 0)) * dt); P.calm = calm; }
     checkPortals();
@@ -854,7 +858,7 @@ function update(dt) {
   if (NET.client) clientMobs(dt); else for (const m of mobs) {
     if (m.dead) { if (m.fade !== 0) corpse(m, dt); if (m.gone) continue; if (m.respawn) { m.rt -= dt; if (m.rt <= 0 && m.fade === 0 && dist2(TP.x, TP.z, m.hx, m.hz) > 500) { m.dead = 0; m.hp = m.max; m.x = m.hx; m.z = m.hz; m.aggro = false; m.mesh.visible = true; m.mesh.rotation.z = 0; m.mesh.scale.setScalar(m.sc); m.lbl.firstChild.textContent = m.name; m.lbl.classList.remove('loot'); pauseModel(m.mesh, false); m.far = null; } } continue; }
     TP = NET.live ? pickTarget(m) : P;
-    const T = m.T, ai = T.ai; for (const k of ['stun', 'slow', 'mark', 'acid', 'blind', 'weak', 'noheal', 'open', 'shell']) if (m[k] > 0) m[k] -= dt;
+    const T = m.T, ai = T.ai; for (const k of ['stun', 'slow', 'mark', 'acid', 'blind', 'weak', 'noheal', 'open', 'shell', 'tauntT']) if (m[k] > 0) m[k] -= dt;
     if (m.still) { if (m.burn > 0) { m.burn -= dt; m.bt -= dt; if (m.bt <= 0) { m.bt = 0.5; hitMob(m, 5, 3, { dot: true, color: '#FF4500' }); } } if (!m.dead) { m.mesh.position.set(m.x, PLANE + 10, m.z); m.aggro = false; } continue; }
     if (m.burn > 0) { m.burn -= dt; m.bt -= dt; if (m.bt <= 0) { m.bt = 0.5; hitMob(m, 5, 3, { dot: true, color: '#FF4500' }); if (m.dead) continue; } fire.emit({ x: m.x + (rnd() - 0.5) * m.r, y: PLANE + rnd() * m.r * 0.5, z: m.z + (rnd() - 0.5) * m.r, vy: 30, life: 0.5, s0: 12, s1: 3, r: 3, g: 1, b: 0.1, a: 0.9 }); }
     const dx = TP.x - m.x, dz = TP.z - m.z; const d = Math.hypot(dx, dz); { const far = d > 1300, hm = !!m.mesh.userData.model; if (far !== m.far || hm !== m.hm) { m.far = far; m.hm = hm; pauseModel(m.mesh, far); } } const dm = m.dmgMul * (m.weak > 0 ? 0.8 : 1); const pd = { from: m }; if (T.sp === 'fog' && d < 420) fogNear = true; m.mesh.visible = !FOG.vis || d < FOG.vis + 40;
@@ -920,7 +924,7 @@ function drawMap() { const c = mctx, Sz = 200, H = 100, wide = has('F-05') || P.
   c.fillStyle = '#6b7073'; for (const [x, y] of [[5, 5], [195, 5], [5, 195], [195, 195]]) { c.beginPath(); c.arc(x, y, 2.4, 0, 6.2832); c.fill(); }
   c.font = '700 10px ui-monospace, Menlo, Consolas, monospace'; c.fillStyle = '#9fb8a4'; c.textAlign = 'center'; c.fillText('С', 100, 12); c.fillText('Ю', 100, 196); c.textAlign = 'left'; c.fillText('З', 4, 104); c.textAlign = 'right'; c.fillText('В', 196, 104); c.textAlign = 'left'; c.fillStyle = '#5f7566'; c.fillText('ЯРУС ' + (tier > 0 ? '+' : '') + tier, 12, 196); }
 let uiT = 1; const NORENDER = /[?&]norender/.test(location.search);   // для проверки сети без видеокарты
-const BUFFS = [['calm', 'ремонт ×3'], ['fSpd', 'искрохвост: скорость +20 %'], ['fArm', 'панцирный карп: урон по вам −15 %'], ['fDmg', 'огнепёр: урон +15 %'], ['wArm', 'железное дерево: урон по вам −10 %'], ['wCd', 'смолистая сосна: перезарядка быстрее'], ['wRep', 'лунный клён: ремонт +2'], ['buffW', 'урон +20 %'], ['buffA', 'урон по вам −20 %'], ['wind', 'попутный ветер'], ['rapid', 'беглый огонь'], ['will', 'стальная воля'], ['tail', 'ветер'], ['burn', 'форсаж'], ['cry', 'боевой клич'], ['anchor', 'якорь'], ['gambit', 'гамбит'], ['dive', 'под облаками'], ['bots', 'бронеботы'], ['mirror', 'зеркало'], ['over', 'перегрузка'], ['probe', 'зонд'], ['hex', 'сглаз: управление наоборот'], ['sleep', 'сон'], ['ink', 'чернила'], ['rot', 'разъедание'], ['web', 'паутина: скорость −60 %'], ['leech', 'пиявки']];
+const BUFFS = [['allyRep', 'ремонтное поле союзника'], ['allyCmd', 'командный маяк союзника: урон +10 %'], ['allyCov', 'заслон союзника'], ['cover', 'заслон'], ['roar', 'рёв двигателей'], ['calm', 'ремонт ×3'], ['fSpd', 'искрохвост: скорость +20 %'], ['fArm', 'панцирный карп: урон по вам −15 %'], ['fDmg', 'огнепёр: урон +15 %'], ['wArm', 'железное дерево: урон по вам −10 %'], ['wCd', 'смолистая сосна: перезарядка быстрее'], ['wRep', 'лунный клён: ремонт +2'], ['buffW', 'урон +20 %'], ['buffA', 'урон по вам −20 %'], ['wind', 'попутный ветер'], ['rapid', 'беглый огонь'], ['will', 'стальная воля'], ['tail', 'ветер'], ['burn', 'форсаж'], ['cry', 'боевой клич'], ['anchor', 'якорь'], ['gambit', 'гамбит'], ['dive', 'под облаками'], ['bots', 'бронеботы'], ['mirror', 'зеркало'], ['over', 'перегрузка'], ['probe', 'зонд'], ['hex', 'сглаз: управление наоборот'], ['sleep', 'сон'], ['ink', 'чернила'], ['rot', 'разъедание'], ['web', 'паутина: скорость −60 %'], ['leech', 'пиявки']];
 function render(dt) { MIS.render();
   { const k = P.diveK * P.diveK * (3 - 2 * P.diveK); ship.position.set(P.x, PLANE + Math.sin(time * 0.9) * 0.8 - 70 * k, P.z); ship.rotation.set(0, P.yaw, 0); ship.rotateZ(P.bank); ship.rotateX(0.5 * Math.sin(Math.PI * P.diveK) * (P.dive > 0 ? 1 : -1));
     diveShade.visible = P.diveK > 0.02; diveShade.position.set(P.x, 2.5, P.z); diveShade.rotation.y = P.yaw; diveShade.material.uniforms.uFade.value = P.diveK;
@@ -942,7 +946,7 @@ function render(dt) { MIS.render();
   // интерфейс: текст, карта и карточки обновляются 10 раз в секунду, этого хватает глазу и не тратит кадр
   uiT += dt; if (uiT < 0.1 && !window.__want) return; uiT = 0; drawInspect();
   $('hp-t').textContent = Math.ceil(P.hp) + ' / ' + S.hp + ' · броня ' + String(Math.round(S.armor * 100) / 100).replace('.', ','); $('hp-f').style.width = (P.hp / S.hp * 100) + '%';
-  $('buffs').textContent = BUFFS.filter(([k]) => k === 'calm' ? P.calm && P.hp < S.hp : P[k] > 0).map(([k, n]) => k === 'calm' || k === 'web' ? n : k === 'leech' ? `${n} ×${P.leech}` : `${n} ${Math.ceil(P[k])} с`).join(' · ');
+  $('buffs').textContent = BUFFS.filter(([k]) => k === 'calm' ? P.calm && P.hp < S.hp : P[k] > 0).map(([k, n]) => k === 'calm' || k === 'web' || k.startsWith('ally') ? n : k === 'leech' ? `${n} ×${P.leech}` : `${n} ${Math.ceil(P[k])} с`).join(' · ');
   { const v = P.dead ? '' : P.lost > 0 ? 'lost' : P.sleep > 0 ? 'zz' : P.ink > 0 ? 'ink' : P.hex > 0 ? 'hex' : '', el = $('veil'), tx = v === 'lost' ? `Вы сбились с пути. Вернитесь к свету: ${Math.ceil(P.lost)}` : v === 'zz' ? 'Корабль спит' : v === 'hex' ? 'Сглаз: управление наоборот' : ''; if (el.className !== v) el.className = v; if (el.dataset.t !== tx) { el.dataset.t = tx; $('veil-t').textContent = tx; } }
   for (const sl of slots) { { const au = !!(L.auto && L.auto.includes(autoKey(sl))); if (sl.au !== au) { sl.au = au; sl.el.dataset.auto = au ? '1' : ''; } } sl.cdEl.style.height = (sl.cd / sl.max * 100) + '%'; if (sl.id === 'W-1' && sl.kind === 'w') { sl.st.textContent = sl.cd > 0 ? sl.cd.toFixed(1) + ' с' : 'прицел ' + Math.round(P.aim) + '%'; sl.el.className = 'slot' + (sl.cd > 0 ? '' : P.aim > 0 ? ' aim' : ' ready'); } else { sl.st.textContent = sl.cd > 0 ? sl.cd.toFixed(1) + ' с' : 'готово'; sl.el.className = 'slot' + (sl.cd > 0 ? '' : ' ready'); } }
   if (target) { $('target').style.display = 'block'; const T = target.T; $('t-name').textContent = `${target.name} · ${D.ARMOR[target.arm].name}`; $('t-hp').style.width = Math.max(0, target.hp / target.max * 100) + '%'; const d = dist2(P.x, P.z, target.x, target.z); const cR = wRange('W-1'); const hasC = slots.some(q => q.id === 'W-1' && q.kind === 'w'); $('t-aim').textContent = `${Math.max(0, Math.ceil(target.hp))} / ${Math.round(target.max)} · ${Math.round(d)} м` + (hasC ? (d > cR + target.r ? ` · далеко для пушек (${Math.round(cR)})` : ` · прицел ${Math.round(P.aim)}%`) : ''); } else $('target').style.display = 'none';
@@ -988,9 +992,10 @@ function tlogP(tp, text, color) { if (!tp || tp === P) log(text, color); else NE
 function tlog(text, color) { tlogP(TP, text, color); }
 function tsleep(tp, t) { if (!tp || tp === P) sleepNow(t); else NET.tell(tp.id, 'sleep', t); }
 // цель моба: ближайший живой капитан. К тому, в кого он вцепился (пиявка, клещ, сглаз, магнит), моб держится до конца приёма
-function pickTarget(m) { const cur = m.tid === 'H' ? P : m.tid && NET.ghosts.get(m.tid) ? NET.ghosts.get(m.tid).proxy : null;
+function pickTarget(m) { if (m.tauntT > 0) { const t = m.taunt === 'H' ? P : NET.ghosts.get(m.taunt) && NET.ghosts.get(m.taunt).proxy; if (t && !t.dead) { m.tid = m.taunt; return t; } }
+  const cur = m.tid === 'H' ? P : m.tid && NET.ghosts.get(m.tid) ? NET.ghosts.get(m.tid).proxy : null;
   if (cur && !cur.dead && (m.att || m.grab > 0 || m.cast > 0 || m.pull > 0)) return cur;
-  let best = null, bd = 1e9; for (const q of teamPlayers(true)) { const d = dist2(q.x, q.z, m.x, m.z) - (q === cur ? 80 : 0); if (d < bd) { bd = d; best = q; } }
+  let best = null, bd = 1e9; for (const q of teamPlayers(true)) { const raw = dist2(q.x, q.z, m.x, m.z), taunt = q === P ? has('F-03') : !!(q.fl & 1); const d = raw - (q === cur ? 80 : 0) - (taunt && raw < 250 ? 250 : 0); if (d < bd) { bd = d; best = q; } }
   if (!best) return P; m.tid = best === P ? 'H' : best.id; return best; }
 const teamSlot = () => { const i = NET.lobby.findIndex(q => q.id === NET.id); return i > 0 ? (i % 2 ? 1 : -1) * Math.ceil(i / 2) : 0; };
 const waitRevive = () => NET.live && MIS.on && !MIS.busy;
@@ -1012,6 +1017,22 @@ function netSkill(id, col) { const near = (dead, R) => { let b = null, bd = R; f
   if (id === 'S-08') { const g = near(true, 250); if (!g || !g.obj) { log('Подъём: рядом нет сбитых союзников'); return false; } channel = { o: g.obj, t: 0, dur: 4, text: 'Поднимаем союзника' }; return true; }
   const g = near(false, id === 'S-07' ? 300 : 250); if (!g) { log(`${D.SKILLS[id].name}: рядом нет союзников`); return false; }
   const [give, cost] = id === 'S-07' ? [120, 40] : [100, 100]; P.hp = Math.max(1, P.hp - cost); bolt(P.x, P.z, g.x, g.z, col, 6, 1.4); burst(g.x, g.z, 40, col, 14); NET.toPeer(g.id, 'xfer', give); log(`${D.SKILLS[id].name}: ${g.nick} +${give} прочности`, txt(col)); return true; }
+// умения, которые действуют на союзников: флаги своего корабля уходят всем в состоянии корабля
+let coverBy = null, towing = null, towT = 0;
+const myFlags = () => (has('F-03') ? 1 : 0) | (has('F-10') ? 2 : 0) | (has('F-28') ? 4 : 0) | (has('F-27') ? 8 : 0) | (has('F-12') ? 16 : 0) | (P.cover > 0 ? 32 : 0) | (P.roar > 0 ? 64 : 0);
+// ремонтное поле (200), командный маяк (250) и заслон (200) союзников рядом
+function allyAuras(dt) { let rep = 0, cmd = 0, cov = null; for (const g of NET.ghosts.values()) { if (g.dead) continue; const d = dist2(P.x, P.z, g.x, g.z); if ((g.fl & 2) && d < 200) rep = 1; if ((g.fl & 4) && d < 250) cmd = 1; if ((g.fl & 32) && d < 200 && (!cov || d < cov.d)) cov = { g, d }; }
+  P.allyRep = rep; P.allyCmd = cmd; P.allyCov = cov ? 1 : 0; coverBy = cov && cov.g; if (rep && P.hp < S.hp) P.hp = Math.min(S.hp, P.hp + 2 * dt); }
+// буксир: подлетите к обломкам сбитого союзника на ходу — трос цепляется сам, обломки идут за кормой. Задний ход отцепляет
+function towTick(dt) { if (!has('F-12')) { towing = null; return; }
+  if (towing) { const g = NET.ghosts.get(towing); if (!g || !g.dead || P.speed < -3 || dist2(P.x, P.z, g.x, g.z) > 160) { if (g) log(g.dead ? 'Буксир: трос отцеплен' : `Буксир: ${g.nick} поднят, трос отцеплен`, '#e9e3cf'); towing = null; return; }
+    towT -= dt; if (towT <= 0) { towT = 0.1; NET.toPeer(g.id, 'tow', [Math.round(P.x - Math.sin(P.yaw) * 42), Math.round(P.z - Math.cos(P.yaw) * 42)]); } return; }
+  if (Math.abs(P.speed) < 8) return; for (const g of NET.ghosts.values()) if (g.dead && dist2(P.x, P.z, g.x, g.z) < 45) { towing = g.id; towT = 0; log(`Буксир: тащим обломки корабля ${g.nick}. Задний ход — отцепить`, '#e9e3cf'); return; } }
+// рёв двигателей: все враги в радиусе 300 девять секунд бьют того, кто ревел
+function roar(id) { const p = id === 'H' ? P : NET.ghosts.get(id) && NET.ghosts.get(id).proxy; if (!p) return; for (const m of mobs) if (!m.dead && dist2(m.x, m.z, p.x, p.z) < 300 + m.r) { m.taunt = id; m.tauntT = 9; if (SEE) m.aggro = true; } }
+// чужой заслон: синий купол вокруг корабля союзника
+function ghostFx(g, dt, drop) { const on = !drop && !g.dead && (g.fl & 32); if (on && !g.cov) { g.cov = FX.dome(40, SKILL_COL['S-04'], true); scene.add(g.cov); } if (!on && g.cov) { scene.remove(g.cov); FX.release(g.cov); g.cov = null; }
+  if (g.cov) { g.cov.position.set(g.x, PLANE + 2, g.z); g.cov.material.uniforms.uT.value = time; g.cov.material.uniforms.uFade.value = 1; } }
 // --- ведущий ---
 function netHit([nid, dmg, type, crit, dot, melt], from) { const m = NET.byNid.get(nid); if (!m || m.dead) return; let k = 1; if (m.boss && MIS.bossBright()) k *= 1.15; if (m.boss && MIS.bossDim()) k *= 0.5;
   if (melt && m.shell > 0) { m.shell = 0; burst(m.x, m.z, m.r + 30, '#ffb030', 24); log('Огонь растопил смоляной панцирь', '#ffe08a'); }
@@ -1028,6 +1049,7 @@ function netReq(t, d, from) { const g = NET.ghosts.get(from), gp = g && g.proxy;
     case 'dash': for (const m of mobs) if (m.att && m.tid === from) { m.att = false; m.cd = 1.5; } return;
     case 'ok': if (modalCur && modalCur.mid === d) modalAck(modalCur, from); return;
     case 'pause': return setPause(!!d);
+    case 'roar': return roar(from);
   } }
 let hsLast = {}; const mfire = [], REC = new Set(), OBST = []; let pidC = 0, recC = 0, oidC = 0;
 function hostState() { const send = (k, v) => { const j = JSON.stringify(v); if (hsLast[k] !== j) { hsLast[k] = j; NET.bcast(k, v); } };
@@ -1056,7 +1078,7 @@ function missionNet() { return {
   makeTreeSpot(x, z, model, life) { const o = makeTreeSpot(x, z, model, life); o.nid = ++recC; o.rec = ['tree', Math.round(x), Math.round(z), model, life || 'stage']; REC.add(o); return o; },
   addObst(x, z, r, life) { const o = { x, z, r, rad: () => r, life, oid: ++oidC }; obstacles.push(o); OBST.push(o); return o; },
   openShop(v) { if (!v) { NET.bcast('shopClose', 1); shop.open = false; for (const k in shop.lv) shop.lv[k] = 0; recompute(false); return; } const n = NET.size(), chest = res.gold, share = Math.floor(chest / n * 100) / 100; NET.bcast('shop', [chest, n, share]); return shopOpen(chest, n, share); },
-  nicks: () => NET.nicks(), bcast: (t, d) => NET.bcast(t, d),
+  nicks: () => NET.nicks(), bcast: (t, d) => NET.bcast(t, d), tug: p => p === P ? has('F-12') : !!(p.fl & 16), quiet: p => p === P ? has('F-27') : !!(p.fl & 8),
   toMenu() { if (NET.host && NET.live) { NET.bcast('end', 1); } NET.inGame = false; NET.sendMe(); hangarOpen = true; keys.clear(); hangar.start(); } }; }
 function shopOpen(chest, n, share) { shop.open = true; res.team = chest; res.gold = share; const sold = sellAll(); hudRes(); return [sold, `Золото команды (${fmt(chest)}) поделено поровну на ${n === 1 ? 'одного капитана' : n + ' капитанов'}: у каждого ${fmt(share)}. Своё золото можно передать другому капитану в лавке`].filter(Boolean).join('. '); }
 // --- гость ---
@@ -1134,6 +1156,8 @@ function netPeer(from, t, d) { const g = NET.ghosts.get(from), nick = g ? g.nick
   if (t === 'revive') { if (!P.dead) return; P.revive = d; P.dead = 0.001; log(`${nick} поднял ваш корабль`, '#63dcb4'); return; }
   if (t === 'xfer') { heal(d); log(`${nick}: +${d} прочности`, '#7FFFD4'); return; }
   if (t === 'imp') { P.dvx += d[0]; P.dvz += d[1]; return; }
+  if (t === 'cover') { damagePlayer(d[0], `Заслон за ${nick}: ${d[1]}`, 0, { raw: true, cover: true }); return; }
+  if (t === 'tow') { if (P.dead) { P.x = d[0]; P.z = d[1]; } return; }
   if (t === 'gift') { res.gold += d; hudRes(); log(`${nick} передал вам ${fmt(d)} золота`, '#ffd24a'); } }
 function clientPrep(id) { L.mission = id; NET.inGame = true; MIS.end(true); NET.repReset(); clearMobs(); NET.byNid.clear(); resetRun();
   for (const o of netPts.values()) unObj(o); netPts.clear(); for (const o of netRecs.values()) { scene.remove(o.g); unObj(o); } netRecs.clear(); for (const o of netObst.values()) { const i = obstacles.indexOf(o); if (i >= 0) obstacles.splice(i, 1); } netObst.clear();
@@ -1162,7 +1186,7 @@ function modalCheck() { const m = modalCur; if (!m || !m.mid || !modalOn || !NET
   if (m.acks.has('H') && !wait.length) { NET.bcast('mclose', m.mid); modalCur = null; nextModal(); if (m.ok) m.ok(); return; }
   if (m.acks.has('H')) { $('modal-ok').disabled = true; $('modal-ok').textContent = 'Ждём: ' + wait.map(id => NET.ghosts.get(id).nick).join(', '); } }
 function modalClose(mid) { if (modalCur && modalCur.mid === mid) { modalCur = null; nextModal(); } else { const i = modalQ.findIndex(q => q.mid === mid); if (i >= 0) modalQ.splice(i, 1); } }
-NET.init({ P, S, L, D, scene, mobs, PLANE, mkLabel, place, applyModel, dropModel, time: () => time, log, removeMob, recipe, unObj, ghostDead, inShield, hidden: hiddenMe, clientDiff, hostState, lateJoin, fxPlay, netHit, netReq, netMsg, netPeer, netMobs, netSpawn,
+NET.init({ myFlags, ghostFx, P, S, L, D, scene, mobs, PLANE, mkLabel, place, applyModel, dropModel, time: () => time, log, removeMob, recipe, unObj, ghostDead, inShield, hidden: hiddenMe, clientDiff, hostState, lateJoin, fxPlay, netHit, netReq, netMsg, netPeer, netMobs, netSpawn,
   get ready() { return hangar.ready; }, teamInfo: () => ({ g: shop.open ? null : Math.round(res.gold * 100) / 100, s: SEE ? 1 : 0 }), teamRes(t) { if (t.g != null && !shop.open) { res.gold = t.g; hudRes(); } SEE = !!t.s; },
   modalCheck, setMission(id) { L.mission = id; const q = D.MISSIONS[id]; if (q && q.stage) L.stage = q.stage; recompute(false); hangar.redraw(); },
   netGone(was, quiet) { if (was === 'host') { for (const g of NET.ghosts.values()) if (g.obj) unObj(g.obj); } hangar.redraw(); },
@@ -1190,5 +1214,5 @@ let last = performance.now(), frames = 0, fpsT = 0;
 function frame(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; if (window.__freeze) { requestAnimationFrame(frame); return; } if (!window.__pause && (!hangarOpen || (NET.live && NET.inGame)) && !paused && !modalOn) update(dt); render(dt); NET.tick(dt); frames++; fpsT += dt; if (fpsT > 0.5) { $('fps').textContent = Math.round(frames / fpsT) + ' к/с'; frames = 0; fpsT = 0; } window.__frames = (window.__frames || 0) + 1; requestAnimationFrame(frame); }
 log(`Мобы и боссы пока вас не видят. ${keyName(KEY.menu)}: ангар — корабль, умения, техника, мобы, лавка, клавиши.`);
 if (STILL) { window.__pause = true; window.__g = { info: renderer.info, MIS, makeTreeSpot, makePond, okAll() { let n = 0; while (modalOn && n++ < 20) $('modal-ok').click(); return n; }, get modalOn() { return modalOn; }, warm, interact, trail, fire, smoke, islands, goTo, places, setTier, get tier() { return tier; }, P, S, L, D, KEY, slots: () => slots, mobs, objects, res, shots, zones, attach, FOG, setFog, sleepNow, webs, cloud, sun, scene, keys, use, setShip(id) { L.ship = id; recompute(true); setShipModel(); }, get flames() { return flames.length; }, setQ(n) { q = n; applyQ(); }, useSkill(id) { return useSkill({ id }); }, useDevice(id) { return useDevice({ id }); }, fireWeapon(id) { return fireWeapon({ id }); }, story, get inspect() { return inspect; }, set inspect(m) { inspect = m; inspDirty = true; }, interact, cycleTarget, dash, orbs, addMob, hitMob, damagePlayer, finish, recompute, swapSlot, openHangar, hangar, shop, flood, camera, sim(n, dt = 1 / 30) { for (let i = 0; i < n; i++) update(dt); }, render, cam(y, p, d) { camYaw = y; camPitch = p; camDist = d; first = true; }, get target() { return target; }, set target(m) { target = m; }, get channel() { return channel; }, set see(v) { SEE = v; } }; }
-window.__net = { NET, P, S, L, mobs, hitMob, get target() { return target; }, objects, MIS, res, shop, get tier() { return tier; }, get modalOn() { return modalOn; }, get paused() { return paused; }, use, interact, finish, damagePlayer, keys, get channel() { return channel; }, zones, FOG };
+window.__net = { NET, P, S, L, mobs, hitMob, spawnMob, useSkill: id => useSkill({ id }), get towing() { return towing; }, get target() { return target; }, objects, MIS, res, shop, get tier() { return tier; }, get modalOn() { return modalOn; }, get paused() { return paused; }, use, interact, finish, damagePlayer, keys, get channel() { return channel; }, zones, FOG };
 requestAnimationFrame(frame);

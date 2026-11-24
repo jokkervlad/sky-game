@@ -120,20 +120,20 @@ NET.bcast = (t, d) => { if (NET.host) toAll([t, d]); };
 function ghostOf(id) { let g = NET.ghosts.get(id); if (g) return g;
   g = { id, nick: '', x: 0, z: 0, yaw: 0, tx: 0, tz: 0, tyaw: 0, speed: 0, bank: 0, hp: 600, max: 600, dead: false, dive: 0, mirror: 0, sh: 0, hide: 0, ship: null, t: 0, fresh: true };
   g.mesh = new THREE.Group(); A.scene.add(g.mesh); g.lbl = A.mkLabel('ally', ''); g.proxy = makeProxy(g); NET.ghosts.set(id, g); return g; }
-function dropGhost(g) { if (g.mesh) { A.dropModel(g.mesh); A.scene.remove(g.mesh); } if (g.lbl) g.lbl.remove(); if (g.obj) A.unObj(g.obj); }
+function dropGhost(g) { A.ghostFx(g, 0, true); if (g.mesh) { A.dropModel(g.mesh); A.scene.remove(g.mesh); } if (g.lbl) g.lbl.remove(); if (g.obj) A.unObj(g.obj); }
 function setGhostShip(g, ship) { if (g.ship === ship) return; g.ship = ship; A.dropModel(g.mesh); const key = A.D.SHIPS[ship] && A.D.SHIPS[ship].model; if (key) A.applyModel(g.mesh, key).then(inst => { if (inst) inst.traverse(o => { for (const mt of [].concat(o.material || [])) if (mt.fog) { mt.fog = false; mt.needsUpdate = true; } }); }); }
 function ghostState(id, d) { const g = ghostOf(id); const was = g.dead;
-  Object.assign(g, { tx: d[0], tz: d[1], tyaw: d[2], speed: d[3], bank: d[4], hp: d[5], max: d[6], dead: !!d[7], dive: d[8], mirror: d[9], sh: d[10], hide: d[11], nick: d[12], lost: d[14] || 0, t: 0 });
+  Object.assign(g, { tx: d[0], tz: d[1], tyaw: d[2], speed: d[3], bank: d[4], hp: d[5], max: d[6], dead: !!d[7], dive: d[8], mirror: d[9], sh: d[10], hide: d[11], nick: d[12], lost: d[14] || 0, fl: d[16] || 0, t: 0 });
   setGhostShip(g, d[13]); if (g.fresh) { g.x = g.tx; g.z = g.tz; g.yaw = g.tyaw; g.fresh = false; } if (was !== g.dead) A.ghostDead(g); }
 function playersState(list) { const seen = new Set(); for (const d of list) { if (d[15] === '#team') { A.teamRes(d[16]); continue; } if (d[15] === NET.id) continue; seen.add(d[15]); ghostState(d[15], d); } for (const [id, g] of NET.ghosts) if (!seen.has(id)) { dropGhost(g); NET.ghosts.delete(id); } }
-function myState() { const P = A.P; return [r1(P.x), r1(P.z), r2(P.yaw), r1(P.speed), r2(P.bank), Math.round(P.hp), A.S.hp, P.dead ? 1 : 0, P.dive > 0 ? 1 : 0, P.mirror > 0 ? 1 : 0, A.inShield() ? 1 : 0, A.hidden() ? 1 : 0, A.L.nick || 'Капитан', A.L.ship, P.lost > 0 ? r1(P.lost) : 0, NET.id]; }
+function myState() { const P = A.P; return [r1(P.x), r1(P.z), r2(P.yaw), r1(P.speed), r2(P.bank), Math.round(P.hp), A.S.hp, P.dead ? 1 : 0, P.dive > 0 ? 1 : 0, P.mirror > 0 ? 1 : 0, A.inShield() ? 1 : 0, A.hidden() ? 1 : 0, A.L.nick || 'Капитан', A.L.ship, P.lost > 0 ? r1(P.lost) : 0, NET.id, A.myFlags()]; }
 function updateGhosts(dt) { const k = 1 - Math.exp(-10 * dt);
   for (const g of NET.ghosts.values()) { g.t += dt; let dy = g.tyaw - g.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); g.yaw += dy * k;
     // гость присылает положение 15 раз в секунду: досчитываем по скорости, чтобы корабль не дёргался
     const ex = g.tx + Math.sin(g.tyaw) * g.speed * Math.min(g.t, 0.2), ez = g.tz + Math.cos(g.tyaw) * g.speed * Math.min(g.t, 0.2);
     if (Math.hypot(ex - g.x, ez - g.z) > 300) { g.x = ex; g.z = ez; } else { g.x += (ex - g.x) * k; g.z += (ez - g.z) * k; }
     const vis = !g.dead && !(g.dive > 0); g.mesh.visible = vis; g.mesh.position.set(g.x, A.PLANE + Math.sin(A.time() * 0.9 + g.x) * 0.8, g.z); g.mesh.rotation.set(0, g.yaw, 0); g.mesh.rotateZ(g.bank || 0);
-    if (g.obj) { g.obj.x = g.x; g.obj.z = g.z; } } }
+    if (g.obj) { g.obj.x = g.x; g.obj.z = g.z; } A.ghostFx(g, dt); } }
 NET.drawGhostLabels = function () { const P = A.P; for (const g of NET.ghosts.values()) { const t = g.dead ? `${g.nick} · сбит` : g.nick; if (g.lbl.dataset.t !== t) { g.lbl.dataset.t = t; g.lbl.firstChild.textContent = t; } g.lbl.classList.toggle('down', g.dead);
     if (A.place(g.lbl, g.x, A.PLANE + 30, g.z)) g.lbl.querySelector('i').style.width = Math.max(0, g.hp / (g.max || 1) * 100) + '%'; } };
 NET.mapDraw = function (c, px) { for (const g of NET.ghosts.values()) { let [a, b] = px(g.x, g.z); const qq = Math.max(Math.abs(a), Math.abs(b)) / 96; if (qq > 1) { a /= qq; b /= qq; } c.fillStyle = g.dead ? '#ff7a66' : '#5fe8ff'; c.beginPath(); c.arc(a, b, 4, 0, 6.3); c.fill(); c.strokeStyle = '#0a0c0b'; c.lineWidth = 1; c.stroke(); } };
@@ -240,7 +240,7 @@ NET.tick = function (dt) { if (!NET.role) return; updateGhosts(dt);
   sendT += dt; repT += dt;
   if (sendT >= 1 / SEND_HZ) { sendT = 0; seq++;
     if (NET.client) { if (NET.inGame) q('H', ['ps', myState()]); A.clientDiff(); }
-    else if (NET.live && NET.inGame) { const all = [myState(), ...[...NET.ghosts.values()].map(g => [r1(g.tx), r1(g.tz), r2(g.tyaw), r1(g.speed), r2(g.bank), g.hp, g.max, g.dead ? 1 : 0, g.dive, g.mirror, g.sh, g.hide, g.nick, g.ship, g.lost, g.id])];
+    else if (NET.live && NET.inGame) { const all = [myState(), ...[...NET.ghosts.values()].map(g => [r1(g.tx), r1(g.tz), r2(g.tyaw), r1(g.speed), r2(g.bank), g.hp, g.max, g.dead ? 1 : 0, g.dive, g.mirror, g.sh, g.hide, g.nick, g.ship, g.lost, g.id, g.fl])];
       const team = A.teamInfo(); for (const id of NET.peers.keys()) q(id, ['pl', all.concat([[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '', null, 0, '#team', team]])]); toAll(['ms', mobSnap()]); flushPset(); A.hostState(); } }
   if (repT >= 1 / REP_HZ) { repT = 0; if (NET.host && NET.inGame) repTick(); }
   flush(); };
