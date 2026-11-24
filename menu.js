@@ -1,8 +1,8 @@
 // Меню: подготовка к вылету по шагам (корабль → оружие → способности → спецтехника → команда)
 // и то же меню в полёте по Esc — с вкладками и разделами полигона.
-import { THUMBS } from './thumbs.js?v=202611241613';
-import { COINS } from './coins.js?v=202611241613';
-import { LOOT } from './loot.js?v=202611241613';
+import { THUMBS } from './thumbs.js?v=202611241617';
+import { COINS } from './coins.js?v=202611241617';
+import { LOOT } from './loot.js?v=202611241617';
 
 const NAMES = { mission: 'Миссия', lobby: 'Зал ожидания', ship: 'Корабль', weapons: 'Оружие', skills: 'Способности', gear: 'Спецтехника', crew: 'Команда', mobs: 'Мобы и боссы', shop: 'Лавка', catch: 'Улов и древесина', world: 'Острова и породы', keys: 'Управление' };
 const DT = ['Кинетический урон', 'Взрывной урон', 'Пробивной урон', 'Огонь', 'Ток'];
@@ -49,9 +49,11 @@ export function initHangar(api) {
     if (!NET.role) return `<section class="room"><h3 class="sec">Игра с друзьями</h3><p class="lead">Один создаёт комнату и отправляет друзьям код или ссылку. Остальные входят по коду. Сервер не нужен: браузеры соединяются напрямую. До 20 капитанов.</p>
       <div class="room-row"><button type="button" class="btn" data-act="room-new"${netBusy ? ' disabled' : ''}>Создать комнату</button><span class="or">или</span><label class="code"><span class="lab">Код комнаты</span><input id="hg-code" type="text" maxlength="4" autocomplete="off" spellcheck="false" value="${esc(joinCode)}" placeholder="ABCD"></label><button type="button" class="btn ghost" data-act="room-join"${netBusy ? ' disabled' : ''}>Войти</button></div>${st}</section>`;
     const n = NET.lobby.length || 1;
+    // кто в комнате: имя, ведущий, корабль и готовность. Обновляется, когда кто-то входит, выходит или жмёт «Готов»
+    const list = `<ul class="room-list" aria-label="Капитаны в комнате">${team().map(p => `<li${p.me ? ' class="me"' : ''}><span class="nm"><b>${esc(p.nick || 'Капитан')}</b>${p.host ? '<small>ведущий</small>' : ''}${p.me ? '<small>вы</small>' : ''}</span><span class="sh">${p.ship && D.SHIPS[p.ship] ? esc(D.SHIPS[p.ship].name) : 'корабль не выбран'}</span><span class="st">${esc(p.st)}</span></li>`).join('')}</ul>`;
     if (NET.host) return `<section class="room on"><h3 class="sec">Комната <b class="fig">${NET.code}</b> · вы ведущий · капитанов: ${n}</h3><p class="lead">Отправьте друзьям код <b>${NET.code}</b> или ссылку. Миссию выбираете вы, корабль и снаряжение каждый выбирает сам.</p>
-      <div class="room-row"><input id="hg-link" type="text" readonly value="${esc(NET.link())}" aria-label="Ссылка на комнату"><button type="button" class="btn ghost" data-act="room-copy">${copied ? 'Скопировано' : 'Скопировать ссылку'}</button><button type="button" class="btn ghost" data-act="room-leave">Закрыть комнату</button></div>${st}</section>`;
-    return `<section class="room on"><h3 class="sec">Комната <b class="fig">${NET.code}</b> · капитанов: ${n}</h3><p class="lead">Миссию выбирает ведущий${NET.lobby[0] ? ': ' + esc(NET.lobby[0].nick) : ''}. Выберите корабль и снаряжение, в зале ожидания нажмите «Готов».</p><div class="room-row"><button type="button" class="btn ghost" data-act="room-leave">Выйти из комнаты</button></div>${st}</section>`; }
+      ${list}<div class="room-row"><input id="hg-link" type="text" readonly value="${esc(NET.link())}" aria-label="Ссылка на комнату"><button type="button" class="btn ghost" data-act="room-copy">${copied ? 'Скопировано' : 'Скопировать ссылку'}</button><button type="button" class="btn ghost" data-act="room-leave">Закрыть комнату</button></div>${st}</section>`;
+    return `<section class="room on"><h3 class="sec">Комната <b class="fig">${NET.code}</b> · капитанов: ${n}</h3><p class="lead">Миссию выбирает ведущий${NET.lobby[0] ? ': ' + esc(NET.lobby[0].nick) : ''}. Выберите корабль и снаряжение, в зале ожидания нажмите «Готов».</p>${list}<div class="room-row"><button type="button" class="btn ghost" data-act="room-leave">Выйти из комнаты</button></div>${st}</section>`; }
   NET.onLobby(() => { const a = document.activeElement; if (root.style.display !== 'none' && mode === 'wizard' && !count && !(a && a.tagName === 'INPUT' && root.contains(a))) draw(); else if (root.style.display !== 'none') drawFoot(); });
   NET.onStatus(() => { netBusy = false; if (root.style.display !== 'none') draw(); });
   function roomJoin() { const c = ($('hg-code') ? $('hg-code').value : joinCode).trim().toUpperCase(); joinCode = c; if (!L.nick.trim()) { msg = 'Сначала введите имя капитана'; return; } netBusy = true; ready = false; NET.join(c, err => { netBusy = false; if (err) msg = err; draw(); }); }

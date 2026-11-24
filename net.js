@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 
 const PREFIX = 'sky3d-v1-';
-export const VERSION = '24.11 23:13';                 // ставится при выкладке: дата и время сборки                 // имя комнаты на сервере-своднике: префикс + код
+export const VERSION = '24.11 23:17';                 // ставится при выкладке: дата и время сборки                 // имя комнаты на сервере-своднике: префикс + код
 const ALPHA = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const SEND_HZ = 15, REP_HZ = 10;
 const qs = new URLSearchParams(location.search);
