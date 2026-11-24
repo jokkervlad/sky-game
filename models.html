@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Небо: модели</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#1a2230;font-family:system-ui,sans-serif;color:#eef2f6}
+canvas{display:block;width:100%;height:100%}
+#labels{position:fixed;inset:0;pointer-events:none}
+.l{position:absolute;transform:translate(-50%,0);font-size:11px;text-align:center;text-shadow:0 1px 3px #000;white-space:nowrap}
+#top{position:fixed;left:12px;top:10px;font-size:13px;background:rgba(0,0,0,.5);padding:6px 10px;border-radius:6px}
+#top a{color:#ffd58a}
+</style>
+<script type="importmap">{"imports":{"three":"./lib/three/build/three.module.min.js","three/addons/":"./lib/three/jsm/"}}</script>
+</head>
+<body>
+<canvas id="c"></canvas><div id="labels"></div>
+<div id="top">Все модели игры. Мышь: вращать, колесо: приближение. Жёлтая стрелка показывает, куда смотрит нос. <a href="./index.html">← в игру</a> · <span id="st"></span></div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { MODELS, applyModel } from './models.js';
+const renderer = new THREE.WebGLRenderer({ canvas: c, antialias: true }); renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.outputColorSpace = THREE.SRGBColorSpace;
+const scene = new THREE.Scene(); scene.background = new THREE.Color(0x1a2230);
+scene.add(new THREE.HemisphereLight(0xdde8ff, 0x3a3026, 1.6)); const sun = new THREE.DirectionalLight(0xffffff, 2.4); sun.position.set(300, 600, 200); scene.add(sun);
+const cam = new THREE.PerspectiveCamera(40, 1, 1, 20000); const ctl = new OrbitControls(cam, c);
+const qp = new URLSearchParams(location.search); const only = qp.get('only'); const keys = Object.keys(MODELS).filter(k => !only || only.split(',').some(p => k.startsWith(p))); const COLS = +(qp.get('cols') || 6), GAP = 260; const items = [];
+keys.forEach((k, i) => { const g = new THREE.Group(); const x = (i % COLS - (COLS - 1) / 2) * GAP, z = Math.floor(i / COLS) * GAP; g.position.set(x, 0, z); scene.add(g);
+  const ar = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, -2, 0), 90, 0xffd24a, 22, 14); g.add(ar);
+  const pl = new THREE.Mesh(new THREE.CircleGeometry(110, 40).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x2a3444 })); pl.position.y = -3; scene.add(pl); pl.position.x = x; pl.position.z = z;
+  const d = document.createElement('div'); d.className = 'l'; d.textContent = k; labels.appendChild(d); items.push({ g, d, k });
+  applyModel(g, k, { hide: false, scale: +(qp.get('z') || 1) }).then(m => { done++; st.textContent = `загружено ${done}/${keys.length}`; }); });
+let done = 0; const rows = Math.ceil(keys.length / COLS);
+cam.position.set(0, qp.get('top') ? +qp.get('top') : 1500, rows * GAP / 2 + (qp.get('top') ? 1 : 1300)); ctl.target.set(0, 0, rows * GAP / 2 - GAP / 2); ctl.update();
+const V = new THREE.Vector3();
+function frame() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix(); renderer.render(scene, cam);
+  for (const it of items) { V.copy(it.g.position); V.z += 115; V.project(cam); it.d.style.left = (V.x * 0.5 + 0.5) * w + 'px'; it.d.style.top = (-V.y * 0.5 + 0.5) * h + 'px'; }
+  requestAnimationFrame(frame); }
+frame();
+</script>
+</body>
+</html>
