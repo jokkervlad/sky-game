@@ -1,9 +1,9 @@
 // Меню: подготовка к вылету по шагам (корабль → оружие → способности → спецтехника → команда)
 // и то же меню в полёте по Esc — с вкладками и разделами полигона.
-import { THUMBS } from './thumbs.js?v=202611281600';
-import { COINS } from './coins.js?v=202611281600';
-import { LOOT } from './loot.js?v=202611281600';
-import { SFX } from './sfx.js?v=202611281600';
+import { THUMBS } from './thumbs.js?v=202611281620';
+import { COINS } from './coins.js?v=202611281620';
+import { LOOT } from './loot.js?v=202611281620';
+import { SFX } from './sfx.js?v=202611281620';
 
 const NAMES = { mission: 'Миссия', lobby: 'Зал ожидания', ship: 'Корабль', weapons: 'Оружие', skills: 'Способности', gear: 'Спецтехника', crew: 'Команда', mobs: 'Мобы и боссы', shop: 'Лавка', catch: 'Улов и древесина', world: 'Острова и породы', keys: 'Управление' };
 const DT = ['Кинетический урон', 'Взрывной урон', 'Пробивной урон', 'Огонь', 'Ток'];
