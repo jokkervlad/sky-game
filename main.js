@@ -111,7 +111,6 @@ const cloudMat = new THREE.ShaderMaterial({
     return Hfin(p, texture2D(uNoise, w/9500.0).r*0.6 + texture2D(uNoise, w/3100.0 + 0.37).r*0.4 + 0.085);
   }
   float surf(vec2 p, float lod){ return -AMP*(1.0 - H(p, lod)); }
-  float surfC(vec2 p){ vec2 w = p + uTime*vec2(5.0, 2.0); return -AMP*(1.0 - Hfin(p, texture2D(uNoise, w/9500.0).r*0.6 + texture2D(uNoise, w/3100.0 + 0.37).r*0.4)); }
   void main(){
     vec3 rd = normalize(vW - cameraPosition);
     float d0 = length(vW - cameraPosition);
@@ -122,16 +121,15 @@ const cloudMat = new THREE.ShaderMaterial({
       float k = float(i)/float(STEPS); tp = t; t = tmax*k*sqrt(k); p = vW + rd*t;
       if(p.y < -AMP*(1.0 - Hup(p.xz))){ if(p.y < surf(p.xz, lod)){ hit = true; break; } }
     }
-    if(hit){ float a = tp, b = t; for(int i=0;i<4;i++){ float m = 0.5*(a+b); vec3 q = vW + rd*m; if(q.y < surf(q.xz, lod)) b = m; else a = m; } t = 0.5*(a+b); p = vW + rd*t; }
+    if(hit){ float a = tp, b = t; for(int i=0;i<6;i++){ float m = 0.5*(a+b); vec3 q = vW + rd*m; if(q.y < surf(q.xz, lod)) b = m; else a = m; } t = 0.5*(a+b); p = vW + rd*t; }
     float dist = d0 + t;
     float hp = H(p.xz, lod);
     float e = 11.0 + dist*0.015;
-    // нормаль по разностям вперёд: две выборки высоты вместо четырёх
-    float hx = H(p.xz + vec2(e,0.0), lod) - hp;
-    float hz = H(p.xz + vec2(0.0,e), lod) - hp;
-    vec3 n = normalize(vec3(-hx*AMP, e, -hz*AMP));
+    float hx = H(p.xz + vec2(e,0.0), lod) - H(p.xz - vec2(e,0.0), lod);
+    float hz = H(p.xz + vec2(0.0,e), lod) - H(p.xz - vec2(0.0,e), lod);
+    vec3 n = normalize(vec3(-hx*AMP, 2.0*e*1.0, -hz*AMP));
     float sh = 0.0;
-    for(int k=1;k<=3;k++){ vec3 q = p + uSun*(float(k)*61.0); sh += clamp((surfC(q.xz) - q.y)/90.0, 0.0, 1.0); } sh *= 1.33;
+    for(int k=1;k<=4;k++){ vec3 q = p + uSun*(float(k)*46.0); sh += clamp((surf(q.xz, lod) - q.y)/90.0, 0.0, 1.0); }
     float light = mix(exp(-sh*1.1), 1.0, 0.12);
     float ndl = dot(n, uSun);
     float diff = clamp(ndl*0.72 + 0.28, 0.0, 1.0);

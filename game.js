@@ -1,16 +1,16 @@
-import { applyModel, loadModel, dropModel, pauseModel } from './models.js?v=202611281620';
-import * as D from './data.js?v=202611281620';
-import { initHangar, dmgTable } from './menu.js?v=202611281620';
-import { COINS } from './coins.js?v=202611281620';
-import { initBuild, waterMat } from './build.js?v=202611281620';
-import { initMission } from './mission.js?v=202611281620';
-import { LOOT } from './loot.js?v=202611281620';
-import * as FX from './fx.js?v=202611281620';
-import { ICONS } from './icons.js?v=202611281620';
-import { NET } from './net.js?v=202611281620';
-import { SFX } from './sfx.js?v=202611281620';
+import { applyModel, loadModel, dropModel, pauseModel } from './models.js?v=202611281700';
+import * as D from './data.js?v=202611281700';
+import { initHangar, dmgTable } from './menu.js?v=202611281700';
+import { COINS } from './coins.js?v=202611281700';
+import { initBuild, waterMat } from './build.js?v=202611281700';
+import { initMission } from './mission.js?v=202611281700';
+import { LOOT } from './loot.js?v=202611281700';
+import * as FX from './fx.js?v=202611281700';
+import { ICONS } from './icons.js?v=202611281700';
+import { NET } from './net.js?v=202611281700';
+import { SFX } from './sfx.js?v=202611281700';
 SFX.setCamera(camera); SFX.names(D);
-import { THREE, scene, camera, renderer, canvas, sunDir, sun, cloud, cloudMat, sky, islands, spires, makeIsland, makeSpire, rng, perlin3, STILL, vortex, CLUMP_G, CLUMP_M, CLUMP_D, ridged3, hemi, ROCK_VARIANTS, ROCKS } from './main.js?v=202611281620';
+import { THREE, scene, camera, renderer, canvas, sunDir, sun, cloud, cloudMat, sky, islands, spires, makeIsland, makeSpire, rng, perlin3, STILL, vortex, CLUMP_G, CLUMP_M, CLUMP_D, ridged3, hemi, ROCK_VARIANTS, ROCKS } from './main.js?v=202611281700';
 
 const PLANE = 36;             // высота, на которой идёт вся игра
 const $ = id => document.getElementById(id);
@@ -371,15 +371,15 @@ function updateShots(dt) { NET.mute++; try { shotsStep(dt); } finally { NET.mute
 function shotsStep(dt) {
   for (let i = shots.length - 1; i >= 0; i--) { const s = shots[i]; let done = false; const g = s.g;
     if (s.kind === 'shell') { if (s.delay > 0) { s.delay -= dt; s.mesh.visible = false; continue; } s.mesh.visible = true; s.x += s.vx * dt; s.z += s.vz * dt; s.life -= dt; fire.emit({ x: s.x, y: s.y, z: s.z, life: 0.22, s0: 9, s1: 2, r: g[0], g: g[1], b: g[2], a: 0.95 });
-      const land = () => { if (s.vis) return explosion(s.t.x, s.y, s.t.z, 0.5, g); hitMob(s.t, s.dmg, 0, { color: s.col, pierce: s.pierce }); explosion(s.t.x, s.y, s.t.z, 0.5, g); if (has('F-23')) for (const m of inR(s.t.x, s.t.z, 55)) if (m !== s.t) hitMob(m, s.dmg * 0.4, 0, { color: s.col }); };
+      const land = () => { SFX.impact('W-1', s.t.x, s.t.z); if (s.vis) return explosion(s.t.x, s.y, s.t.z, 0.5, g); hitMob(s.t, s.dmg, 0, { color: s.col, pierce: s.pierce }); SFX.impact('W-1', s.t.x, s.t.z); explosion(s.t.x, s.y, s.t.z, 0.5, g); if (has('F-23')) for (const m of inR(s.t.x, s.t.z, 55)) if (m !== s.t) hitMob(m, s.dmg * 0.4, 0, { color: s.col }); };
       if (s.hit && !s.t.dead && dist2(s.x, s.z, s.t.x, s.t.z) < s.t.r + 8) { land(); done = true; } else if (s.life <= 0) { if (s.hit && !s.t.dead) land(); else puff(s.x, s.y - 20, s.z, 16, [0.9, 0.9, 0.95], 0.5, 0.8); done = true; } }
     else if (s.kind === 'rocket') { s.life -= dt; s.sp = Math.min(273, s.sp + 231 * dt); if (s.t && !s.t.dead) { const want = Math.atan2(s.t.x - s.x, s.t.z - s.z); let d = want - s.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); s.yaw += clamp(d, -3.2 * dt, 3.2 * dt); }
       s.x += Math.sin(s.yaw) * s.sp * dt; s.z += Math.cos(s.yaw) * s.sp * dt; s.y = lerp(s.y, PLANE + 2, 1 - Math.exp(-2 * dt)); s.mesh.rotation.y = s.yaw;
       fire.emit({ x: s.x - Math.sin(s.yaw) * 4, y: s.y, z: s.z - Math.cos(s.yaw) * 4, life: 0.45, s0: 12, s1: 3, r: g[0], g: g[1], b: g[2], a: 1 }); smoke.emit({ x: s.x - Math.sin(s.yaw) * 5, y: s.y, z: s.z - Math.cos(s.yaw) * 5, vy: 3, life: 1.4 + rnd() * 0.6, s0: 6, s1: 28, r: 1.4, g: 1.1, b: 1.3, a: 0.4 });
-      for (const m of mobs) if (!m.dead && dist2(s.x, s.z, m.x, m.z) < m.r + 6) { if (!s.vis) hitMob(m, s.dmg, 1, { color: s.col }); if (!s.vis) for (const q of inR(s.x, s.z, blast(45))) if (q !== m) hitMob(q, s.dmg * 0.3, 1, { color: s.col }); explosion(s.x, s.y, s.z, 1.2, g); done = true; break; }
-      if (!done && (s.life <= 0 || obstacleAt(s.x, s.z, 0))) { explosion(s.x, s.y, s.z, 0.9, g); done = true; } }
+      for (const m of mobs) if (!m.dead && dist2(s.x, s.z, m.x, m.z) < m.r + 6) { if (!s.vis) hitMob(m, s.dmg, 1, { color: s.col }); if (!s.vis) for (const q of inR(s.x, s.z, blast(45))) if (q !== m) hitMob(q, s.dmg * 0.3, 1, { color: s.col }); SFX.impact('W-2', s.x, s.z); explosion(s.x, s.y, s.z, 1.2, g); done = true; break; }
+      if (!done && (s.life <= 0 || obstacleAt(s.x, s.z, 0))) { SFX.impact('W-2', s.x, s.z); explosion(s.x, s.y, s.z, 0.9, g); done = true; } }
     else if (s.kind === 'mortar') { s.t0 += dt; const k = Math.min(1, s.t0 / s.dur); s.x = lerp(s.sx, s.tx, k); s.z = lerp(s.sz, s.tz, k); s.y = PLANE + 10 + Math.sin(k * Math.PI) * 170; s.mark.material.opacity = 0.5 + 0.5 * Math.sin(s.t0 * 22); fire.emit({ x: s.x, y: s.y, z: s.z, life: 0.4, s0: 10, s1: 2, r: g[0], g: g[1], b: g[2], a: 0.6 });
-      if (k >= 1) { explosion(s.tx, PLANE, s.tz, s.rad / 26, g); if (!s.vis) for (const m of inR(s.tx, s.tz, s.rad)) hitMob(m, s.dmg, 1, { color: s.col }); scene.remove(s.mark); done = true; } }
+      if (k >= 1) { SFX.impact('W-3', s.tx, s.tz); explosion(s.tx, PLANE, s.tz, s.rad / 26, g); if (!s.vis) for (const m of inR(s.tx, s.tz, s.rad)) hitMob(m, s.dmg, 1, { color: s.col }); scene.remove(s.mark); done = true; } }
     else if (s.kind === 'ebomb') { s.t0 += dt; const k = Math.min(1, s.t0 / s.dur); s.x = lerp(s.sx, s.tx, k); s.z = lerp(s.sz, s.tz, k); s.y = PLANE + 6 + Math.sin(k * Math.PI) * 150; fire.emit({ x: s.x, y: s.y, z: s.z, life: 0.4, s0: 12, s1: 3, r: 2.4, g: 0.3, b: 1.0, a: 0.8 }); if (k >= 1) { explosion(s.tx, PLANE, s.tz, 2.2, [2.6, 0.4, 1.2]); if (!s.vis) for (const q of teamPlayers(true)) if (dist2(s.tx, s.tz, q.x, q.z) < 85) hurtP(q, s.dmg, s.from + ': бомба', 1, { from: s.m }); done = true; } }
     else { s.x += s.vx * dt; s.z += s.vz * dt; s.life -= dt; fire.emit({ x: s.x, y: s.y, z: s.z, life: 0.25, s0: 9, s1: 3, r: 3.2, g: 0.6, b: 1.6, a: 0.9 });
       const dp = dist2(s.x, s.z, P.x, P.z); const shield = zones.find(zn => zn.shield && dist2(s.x, s.z, zn.x, zn.z) < zn.r);
@@ -584,7 +584,7 @@ const SHELL_COLORS = [{ name: 'Красная', hex: 0xff3a30, shell: 0xf2c4bd, 
 [[-140, -260], [420, 520], [-620, 120], [900, 160], [-60, 760], [-1050, -620], [520, -900], [1250, -200], [80, 230], [-330, -80]].forEach(([x, z], si) => { const SC = SHELL_COLORS[si % SHELL_COLORS.length]; [x, z] = freeSpot(x, z, 70); const g = new THREE.Group(); const cm = clamMat.clone(); cm.color.setHex(SC.shell); const pm = pearlMat.clone(); pm.emissive.setHex(SC.hex); const bot = new THREE.Mesh(DOME_B, cm); const botIn = new THREE.Mesh(DOME_B, shellIn); botIn.scale.setScalar(0.96); const top = new THREE.Group(); top.position.set(0, 0, -17); const tm = new THREE.Mesh(DOME_T, cm); tm.position.set(0, 0, 17); const tin = new THREE.Mesh(DOME_T, shellIn); tin.position.set(0, 0, 17); tin.scale.setScalar(0.96); top.add(tm, tin); const pearl = new THREE.Mesh(new THREE.SphereGeometry(5, 20, 14), pm); pearl.position.y = -2; g.add(bot, botIn, top, pearl); g.traverse(o => { if (o.isMesh) o.castShadow = true; }); g.position.set(x, PLANE, z); g.rotation.y = rnd() * 6.28; scene.add(g); const o = { kind: 'shell', x, z, r: 30, g, top, pearl, cd: 0, col: SC.col, ci: si % SHELL_COLORS.length }; addObjLabel(o, SC.name + ' жемчужница'); objects.push(o); });
 const SHELL_HEX = SHELL_COLORS.map(s => s.hex.toString(16).padStart(6, '0'));
 const orbs = []; const lootAcc = { pearls: 0, gears: 0 };
-function spawnOrbs(x, z, n, col) { for (let i = 0; i < n; i++) { const a = rnd() * 6.28, v = 70 + rnd() * 90; const kind = rnd() < 0.85 ? 'pearls' : 'gears'; orbs.push({ x, y: PLANE + 4, z, vx: Math.cos(a) * v, vy: 50 + rnd() * 70, vz: Math.sin(a) * v, t: -i * 0.03, kind, val: 1, col: col.map(c => c * (0.8 + rnd() * 0.4)) }); } }
+function spawnOrbs(x, z, n, col) { SFX.shell(x, z); for (let i = 0; i < n; i++) { const a = rnd() * 6.28, v = 70 + rnd() * 90; const kind = rnd() < 0.85 ? 'pearls' : 'gears'; orbs.push({ x, y: PLANE + 4, z, vx: Math.cos(a) * v, vy: 50 + rnd() * 70, vz: Math.sin(a) * v, t: -i * 0.03, kind, val: 1, col: col.map(c => c * (0.8 + rnd() * 0.4)) }); } }
 function updateOrbs(dt) { for (let i = orbs.length - 1; i >= 0; i--) { const o = orbs[i]; o.t += dt; if (o.t < 0) continue;
     if (o.t < 0.7) { const f = Math.exp(-2.5 * dt); o.vx *= f; o.vz *= f; o.vy -= 110 * dt; } else { const dx = P.x - o.x, dy = PLANE + 4 - o.y, dz = P.z - o.z; const d = Math.hypot(dx, dy, dz) || 1; const sp = Math.min(420, 120 + (o.t - 0.7) * 500); o.vx = dx / d * sp; o.vy = dy / d * sp; o.vz = dz / d * sp; if (d < 16 || P.dead) { lootAcc[o.kind] += o.val; fire.emit({ x: o.x, y: o.y, z: o.z, life: 0.25, s0: 10, s1: 40, r: o.col[0], g: o.col[1], b: o.col[2], a: 0.9 }); orbs.splice(i, 1); continue; } }
     o.x += o.vx * dt; o.y += o.vy * dt; o.z += o.vz * dt; fire.emit({ x: o.x, y: o.y, z: o.z, life: 0.1, s0: 13, s1: 11, r: o.col[0] + 1, g: o.col[1] + 1, b: o.col[2] + 1, a: 1 }); fire.emit({ x: o.x, y: o.y, z: o.z, life: 0.5, s0: 8, s1: 1, r: o.col[0], g: o.col[1], b: o.col[2], a: 0.8 }); }
