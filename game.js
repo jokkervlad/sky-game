@@ -1,16 +1,16 @@
-import { applyModel, loadModel, dropModel, pauseModel } from './models.js?v=202611281540';
-import * as D from './data.js?v=202611281540';
-import { initHangar, dmgTable } from './menu.js?v=202611281540';
-import { COINS } from './coins.js?v=202611281540';
-import { initBuild, waterMat } from './build.js?v=202611281540';
-import { initMission } from './mission.js?v=202611281540';
-import { LOOT } from './loot.js?v=202611281540';
-import * as FX from './fx.js?v=202611281540';
-import { ICONS } from './icons.js?v=202611281540';
-import { NET } from './net.js?v=202611281540';
-import { SFX } from './sfx.js?v=202611281540';
+import { applyModel, loadModel, dropModel, pauseModel } from './models.js?v=202611281600';
+import * as D from './data.js?v=202611281600';
+import { initHangar, dmgTable } from './menu.js?v=202611281600';
+import { COINS } from './coins.js?v=202611281600';
+import { initBuild, waterMat } from './build.js?v=202611281600';
+import { initMission } from './mission.js?v=202611281600';
+import { LOOT } from './loot.js?v=202611281600';
+import * as FX from './fx.js?v=202611281600';
+import { ICONS } from './icons.js?v=202611281600';
+import { NET } from './net.js?v=202611281600';
+import { SFX } from './sfx.js?v=202611281600';
 SFX.setCamera(camera); SFX.names(D);
-import { THREE, scene, camera, renderer, canvas, sunDir, sun, cloud, cloudMat, sky, islands, spires, makeIsland, makeSpire, rng, perlin3, STILL, vortex, CLUMP_G, CLUMP_M, CLUMP_D, ridged3, hemi, ROCK_VARIANTS, ROCKS } from './main.js?v=202611281540';
+import { THREE, scene, camera, renderer, canvas, sunDir, sun, cloud, cloudMat, sky, islands, spires, makeIsland, makeSpire, rng, perlin3, STILL, vortex, CLUMP_G, CLUMP_M, CLUMP_D, ridged3, hemi, ROCK_VARIANTS, ROCKS } from './main.js?v=202611281600';
 
 const PLANE = 36;             // высота, на которой идёт вся игра
 const $ = id => document.getElementById(id);
@@ -683,7 +683,7 @@ const actOf = c => { for (const a in KEY) if (KEY[a] === c) return a; return c =
 const HEXK = { left: 'right', right: 'left', fwd: 'back', back: 'fwd' };   // сглаз: руль и тяга наоборот
 const held = a => { if (P.sleep > 0 || P.rooted > 0) return false; if (P.hex > 0 && HEXK[a]) a = HEXK[a]; return keys.has(KEY[a]) || (a === 'dash' && KEY.dash === 'ShiftLeft' && keys.has('ShiftRight')); };
 const DASH = { left: [1, 0], right: [-1, 0], fwd: [0, 1], back: [0, -1] };
-addEventListener('keydown', e => { const c = e.code; if (modalOn) { e.preventDefault(); if (!e.repeat && (c === 'Enter' || c === 'Space' || c === 'NumpadEnter')) $('modal-ok').click(); return; } if (hangarOpen) { if (!e.repeat) hangar.key(e); return; } if (c === 'KeyM' && !e.repeat && !actOf(c)) { log(SFX.toggle() ? 'Звук включён (M — выключить)' : 'Звук выключен (M — включить)'); return; } const a = actOf(c); if (a) e.preventDefault(); keys.add(c); if (e.repeat || !a) return; if (a === 'pause') { if (!hangarOpen) setPause(!paused); return; } if (paused) return; if (P.sleep > 0 && a !== 'menu' && a !== 'help') return;
+addEventListener('keydown', e => { const c = e.code; if (modalOn) { e.preventDefault(); if (!e.repeat && (c === 'Enter' || c === 'Space' || c === 'NumpadEnter')) $('modal-ok').click(); return; } if (hangarOpen) { if (!e.repeat) hangar.key(e); return; } if (c === 'F8' && !e.repeat) { e.preventDefault(); if ($('bench').style.display === 'block' && !BENCH.on) $('bench').style.display = 'none'; else bench(); return; } if (c === 'KeyM' && !e.repeat && !actOf(c)) { log(SFX.toggle() ? 'Звук включён (M — выключить)' : 'Звук выключен (M — включить)'); return; } const a = actOf(c); if (a) e.preventDefault(); keys.add(c); if (e.repeat || !a) return; if (a === 'pause') { if (!hangarOpen) setPause(!paused); return; } if (paused) return; if (P.sleep > 0 && a !== 'menu' && a !== 'help') return;
   if (a.startsWith('slot')) { let n = +a.slice(4) - 1; if (P.hex > 0) { const cnt = slots.filter(q => q.kind !== 's').length; if (n < cnt) n = cnt - 1 - n; } if (held('swap')) swapSlot(n); else if (slots[n] && slots[n].kind !== 's') use(n); }
   else if (a.startsWith('skill')) { const n = slots.findIndex(q => q.kind === 's' && q.key === a); if (n >= 0) use(n); }
   else if (a === 'act') interact(); else if (a === 'target') cycleTarget(); else if (a === 'help') { helpOn = !helpOn; $('help').style.display = helpOn ? '' : 'none'; } else if (a === 'menu') openHangar();
@@ -930,6 +930,29 @@ function drawMap() { const c = mctx, Sz = 200, H = 100, wide = has('F-05') || P.
   c.font = '700 10px ui-monospace, Menlo, Consolas, monospace'; c.fillStyle = '#9fb8a4'; c.textAlign = 'center'; c.fillText('С', 100, 12); c.fillText('Ю', 100, 196); c.textAlign = 'left'; c.fillText('З', 4, 104); c.textAlign = 'right'; c.fillText('В', 196, 104); c.textAlign = 'left'; c.fillStyle = '#5f7566'; c.fillText('ЯРУС ' + (tier > 0 ? '+' : '') + tier, 12, 196); }
 let uiT = 1; const NORENDER = /[?&]norender/.test(location.search);   // для проверки сети без видеокарты
 const BUFFS = [['allyRep', 'ремонтное поле союзника'], ['allyCmd', 'командный маяк союзника: урон +10 %'], ['allyCov', 'заслон союзника'], ['cover', 'заслон'], ['roar', 'рёв двигателей'], ['calm', 'ремонт ×3'], ['fSpd', 'искрохвост: скорость +20 %'], ['fArm', 'панцирный карп: урон по вам −15 %'], ['fDmg', 'огнепёр: урон +15 %'], ['wArm', 'железное дерево: урон по вам −10 %'], ['wCd', 'смолистая сосна: перезарядка быстрее'], ['wRep', 'лунный клён: ремонт +2'], ['buffW', 'урон +20 %'], ['buffA', 'урон по вам −20 %'], ['wind', 'попутный ветер'], ['rapid', 'беглый огонь'], ['will', 'стальная воля'], ['tail', 'ветер'], ['burn', 'форсаж'], ['cry', 'боевой клич'], ['anchor', 'якорь'], ['gambit', 'гамбит'], ['dive', 'под облаками'], ['bots', 'бронеботы'], ['mirror', 'зеркало'], ['over', 'перегрузка'], ['probe', 'зонд'], ['hex', 'сглаз: управление наоборот'], ['sleep', 'сон'], ['ink', 'чернила'], ['rot', 'разъедание'], ['web', 'паутина: скорость −60 %'], ['leech', 'пиявки']];
+// ---------- замер: время кадра на видеокарте и проверка по частям (F8) ----------
+const PROF = { u: 0, r: 0, g: 0 }; const BENCH = { on: false, noShadow: false };
+const GL = renderer.getContext(), TQ = GL.getExtension && GL.getExtension('EXT_disjoint_timer_query_webgl2'); const tqs = []; let tqCur = null;
+function gpuBegin() { if (!TQ) return; for (let i = tqs.length - 1; i >= 0; i--) { const q = tqs[i]; if (GL.getQueryParameter(q, GL.QUERY_RESULT_AVAILABLE)) { if (!GL.getParameter(TQ.GPU_DISJOINT_EXT)) { const ms = GL.getQueryParameter(q, GL.QUERY_RESULT) / 1e6; PROF.g += (ms - PROF.g) * 0.1; } GL.deleteQuery(q); tqs.splice(i, 1); } } if (tqs.length > 4) return; tqCur = GL.createQuery(); GL.beginQuery(TQ.TIME_ELAPSED_EXT, tqCur); }
+function gpuEnd() { if (!tqCur) return; GL.endQuery(TQ.TIME_ELAPSED_EXT); tqs.push(tqCur); tqCur = null; }
+async function bench() { if (BENCH.on) return; BENCH.on = true; const sl = ms => new Promise(r => setTimeout(r, ms)); const box = $('bench'); box.style.display = 'block';
+  const meas = async () => { await sl(700); const f0 = window.__frames, t0 = performance.now(); let g = 0, c = 0, n = 0; const t = setInterval(() => { g += PROF.g; c += PROF.u + PROF.r; n++; }, 50); await sl(1800); clearInterval(t); return { fps: Math.round((window.__frames - f0) / ((performance.now() - t0) / 1000)), g: g / n, c: c / n }; };
+  const rows = []; const show = (cur) => { box.innerHTML = `<b>Замер частоты кадров${cur ? ' · идёт: ' + cur : ' · готово'}</b><table><tr><th>Что</th><th>к/с</th><th>видеокарта, мс</th><th>процессор, мс</th></tr>${rows.map(r => `<tr><td>${r[0]}</td><td>${r[1].fps}</td><td>${TQ ? r[1].g.toFixed(1) : '—'}</td><td>${r[1].c.toFixed(1)}</td></tr>`).join('')}</table>${cur ? '' : '<p>Сделайте снимок экрана и пришлите. Закрыть: F8</p>'}`; };
+  const test = async (name, on, off) => { show(name); on && on(); rows.push([name, await meas()]); off && off(); show(name); };
+  const hideAll = list => { const h = []; for (const o of list) { const g = o && (o.isObject3D ? o : o.g || o.mesh || o.group); if (g && g.visible) { g.visible = false; h.push(g); } } return () => h.forEach(g => g.visible = true); };
+  let undo; const pr = renderer.getPixelRatio(), q0 = q;
+  await test(`Как сейчас (${innerWidth}×${innerHeight}, масштаб ${devicePixelRatio}, качество ${['низкое', 'среднее', 'высокое'][q]})`);
+  await test('Без облаков', () => { cloud.visible = false; }, () => { cloud.visible = true; });
+  await test('Облака попроще', () => { cloudMat.defines.STEPS = 10; cloudMat.needsUpdate = true; }, () => { cloudMat.defines.STEPS = QUAL[q].steps; cloudMat.needsUpdate = true; });
+  await test('Без обновления теней', () => { BENCH.noShadow = true; }, () => { BENCH.noShadow = false; });
+  await test('Без островов', () => { undo = hideAll(islands); }, () => undo());
+  await test('Без скал-шпилей', () => { undo = hideAll(spires); }, () => undo());
+  await test('Без мобов', () => { undo = hideAll(mobs.map(m => m.mesh)); }, () => undo());
+  await test('Без частиц и эффектов', () => { const l = []; scene.traverse(o => { if (o.isPoints || (o.material && o.material.blending === THREE.AdditiveBlending)) l.push(o); }); undo = hideAll(l); }, () => undo());
+  await test('Без подписей над объектами', () => { $('labels') && ($('labels').style.display = 'none'); document.querySelectorAll('.lbl').forEach(e => e.style.visibility = 'hidden'); }, () => { $('labels') && ($('labels').style.display = ''); document.querySelectorAll('.lbl').forEach(e => e.style.visibility = ''); });
+  await test('Разрешение 75 %', () => { renderer.setPixelRatio(pr * 0.75); resize(); }, () => { renderer.setPixelRatio(pr); resize(); });
+  show(''); BENCH.on = false; }
+window.__bench = bench;
 function render(dt) { MIS.render();
   { const k = P.diveK * P.diveK * (3 - 2 * P.diveK); ship.position.set(P.x, PLANE + Math.sin(time * 0.9) * 0.8 - 70 * k, P.z); ship.rotation.set(0, P.yaw, 0); ship.rotateZ(P.bank); ship.rotateX(0.5 * Math.sin(Math.PI * P.diveK) * (P.dive > 0 ? 1 : -1));
     diveShade.visible = P.diveK > 0.02; diveShade.position.set(P.x, 2.5, P.z); diveShade.rotation.y = P.yaw; diveShade.material.uniforms.uFade.value = P.diveK;
@@ -940,8 +963,8 @@ function render(dt) { MIS.render();
   const cy = camFollow + Math.PI + camYaw; camera.position.set(camC.x + Math.sin(cy) * Math.cos(camPitch) * camDist, camC.y + Math.sin(camPitch) * camDist, camC.z + Math.cos(cy) * Math.cos(camPitch) * camDist); const la = camDist * 0.22; camera.lookAt(camC.x - Math.sin(cy) * la, PLANE + 22, camC.z - Math.cos(cy) * la); if (P.lost > 0 && !P.dead) { const k = 2 + (10 - P.lost) * 1.1; camera.position.x += (Math.random() - 0.5) * k; camera.position.y += (Math.random() - 0.5) * k; camera.position.z += (Math.random() - 0.5) * k; }
   sun.target.position.set(P.x, PLANE, P.z); sun.position.set(P.x, PLANE, P.z).addScaledVector(sunDir, 1800); cloud.position.set(camera.position.x, 0, camera.position.z); sky.position.copy(camera.position); cloudMat.uniforms.uTime.value = STILL ? 12 : time;
   // тени: пока корабль поворачивает или кренится, обновляем каждый кадр, иначе тень на корпусе отстаёт на кадр и рябит
-  frameN++; renderer.shadowMap.needsUpdate = (frameN & 1) === 0 || frameN < 3 || turnNow !== 0 || Math.abs(P.bank) > 0.01 || P.dashT > 0;
-  if (!NORENDER) renderer.render(scene, camera);
+  frameN++; renderer.shadowMap.needsUpdate = !BENCH.noShadow && (frameN & 1) === 0 || frameN < 3 || turnNow !== 0 || Math.abs(P.bank) > 0.01 || P.dashT > 0;
+  if (!NORENDER) { gpuBegin(); renderer.render(scene, camera); gpuEnd(); }
   if (window.__want) { window.__shot = canvas.toDataURL('image/jpeg', 0.9); window.__want = false; }
   // подписи
   if (NET.role) NET.drawGhostLabels();
@@ -1224,7 +1247,7 @@ $('in-close').addEventListener('click', () => { inspect = null; drawInspect(); }
 recompute(true); setShipModel();
 
 let last = performance.now(), frames = 0, fpsT = 0;
-const PROF = { u: 0, r: 0 }; window.__prof = PROF;
+window.__prof = PROF;
 // видеокарта: на ноутбуках с двумя картами браузер часто берёт слабую встроенную (Intel, AMD Radeon Graphics) — показываем, на какой идёт игра
 const GPU = (() => { try { const gl = renderer.getContext(), e = gl.getExtension('WEBGL_debug_renderer_info'); return e ? String(gl.getParameter(e.UNMASKED_RENDERER_WEBGL)) : ''; } catch (e) { return ''; } })();
 const GPU_N = (GPU.match(/(GeForce [^(,]+|Quadro [^(,]+|RTX [^(,]+|Radeon[^(,]*|Arc [^(,]+|Intel[^(,]*Graphics[^(,]*|UHD[^(,]*|Iris[^(,]*|Apple [^(,]+)/i) || [''])[0].replace(/\s+/g, ' ').trim();
