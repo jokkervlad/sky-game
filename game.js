@@ -1,16 +1,16 @@
-import { applyModel, loadModel, dropModel, pauseModel } from './models.js?v=202611281720';
-import * as D from './data.js?v=202611281720';
-import { initHangar, dmgTable } from './menu.js?v=202611281720';
-import { COINS } from './coins.js?v=202611281720';
-import { initBuild, waterMat } from './build.js?v=202611281720';
-import { initMission } from './mission.js?v=202611281720';
-import { LOOT } from './loot.js?v=202611281720';
-import * as FX from './fx.js?v=202611281720';
-import { ICONS } from './icons.js?v=202611281720';
-import { NET } from './net.js?v=202611281720';
-import { SFX } from './sfx.js?v=202611281720';
+import { applyModel, loadModel, dropModel, pauseModel } from './models.js?v=202611281800';
+import * as D from './data.js?v=202611281800';
+import { initHangar, dmgTable } from './menu.js?v=202611281800';
+import { COINS } from './coins.js?v=202611281800';
+import { initBuild, waterMat } from './build.js?v=202611281800';
+import { initMission } from './mission.js?v=202611281800';
+import { LOOT } from './loot.js?v=202611281800';
+import * as FX from './fx.js?v=202611281800';
+import { ICONS } from './icons.js?v=202611281800';
+import { NET } from './net.js?v=202611281800';
+import { SFX } from './sfx.js?v=202611281800';
 SFX.setCamera(camera); SFX.names(D);
-import { THREE, scene, camera, renderer, canvas, sunDir, sun, cloud, cloudMat, sky, islands, spires, makeIsland, makeSpire, rng, perlin3, STILL, vortex, CLUMP_G, CLUMP_M, CLUMP_D, ridged3, hemi, ROCK_VARIANTS, ROCKS } from './main.js?v=202611281720';
+import { THREE, scene, camera, renderer, canvas, sunDir, sun, cloud, cloudMat, sky, islands, spires, makeIsland, makeSpire, rng, perlin3, STILL, vortex, CLUMP_G, CLUMP_M, CLUMP_D, ridged3, hemi, ROCK_VARIANTS, ROCKS } from './main.js?v=202611281800';
 
 const PLANE = 36;             // высота, на которой идёт вся игра
 const $ = id => document.getElementById(id);

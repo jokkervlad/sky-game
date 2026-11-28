@@ -10,6 +10,15 @@ const MAXV = 40;                        // не больше стольких з
 const LOWP = /^(h\d|bolt|ring|warn|coin)/;   // частые мелкие звуки: уступают место голосам мобов, боссов и навыков
 try { const s = localStorage.getItem('sky-sfx'); if (s) { const o = JSON.parse(s); on = o.on !== false; vol = o.vol ?? vol; } } catch (e) {}
 
+// записи (CC0): папка snd/, имя = группа + номер. Грузятся в фоне после первого клика
+const BANK = {"shoot": 4, "heavyshot": 3, "zap": 4, "zapl": 3, "knife": 5, "punchh": 5, "punchm": 5, "imp": 5, "metal": 5, "crunch": 5, "lowex": 2, "blast": 3, "grav": 3, "glass": 3, "break": 2, "emp": 3, "elecex": 1, "heal": 15, "wind": 5, "ice": 5, "fire": 5, "earth": 5, "water": 5, "plant": 5, "light": 5, "beam": 5, "lpist": 5, "lrifle": 5, "lsmall": 5, "llarge": 5, "ff": 5, "thr": 5, "comp": 4, "dopen": 3, "dclose": 3, "slime": 2, "charge": 10, "relec": 9, "rburst": 2};
+const BUF = new Map(); let loading = false;
+function loadBank() { if (loading || !ac) return; loading = true; const base = new URL('./snd/', import.meta.url);
+  const all = Object.entries(BANK).flatMap(([g, n]) => Array.from({ length: n }, (_, i) => g + i)); let k = 0;
+  const next = () => { const name = all[k++]; if (!name) return; fetch(new URL(name + '.ogg', base)).then(r => r.arrayBuffer()).then(b => ac.decodeAudioData(b)).then(buf => BUF.set(name, buf)).catch(() => {}).finally(next); };
+  for (let i = 0; i < 6; i++) next(); }
+// выбор записи: 'heal' — случайная из группы, 'heal3' — конкретная
+function pick(n) { if (BUF.has(n)) return BUF.get(n); const c = BANK[n]; if (!c) return null; return BUF.get(n + ((Math.random() * c) | 0)) || BUF.get(n + '0') || null; }
 function init() { if (ac) return ac; const C = window.AudioContext || window.webkitAudioContext; if (!C) return null;
   ac = new C(); comp = ac.createDynamicsCompressor(); comp.threshold.value = -16; comp.ratio.value = 5; comp.attack.value = 0.004; comp.release.value = 0.2;
   master = ac.createGain(); master.gain.value = on ? vol : 0; master.connect(comp); comp.connect(ac.destination);
@@ -18,7 +27,7 @@ function init() { if (ac) return ac; const C = window.AudioContext || window.web
     verb = ac.createConvolver(); verb.buffer = ir; const vg = ac.createGain(); vg.gain.value = 0.55; const vf = ac.createBiquadFilter(); vf.type = 'lowpass'; vf.frequency.value = 5200; verb.connect(vf); vf.connect(vg); vg.connect(master); }
   noiseBuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   return ac; }
-const unlock = () => { if (init() && ac.state !== 'running') ac.resume(); };
+const unlock = () => { if (init()) { if (ac.state !== 'running') ac.resume(); loadBank(); } };
 addEventListener('pointerdown', unlock, true); addEventListener('keydown', unlock, true);
 
 const R = (a, b) => a + Math.random() * (b - a);
@@ -26,6 +35,7 @@ const hash = s => { let h = 2166136261; for (const c of String(s)) { h ^= c.char
 
 // один слой: osc — тон (sine/square/sawtooth/triangle), noise — шум; f0→f1 — скольжение частоты; lp/hp/bp — фильтр со скольжением
 function layer(out, t, o) {
+  if (o.s) return sampleLayer(out, t, o);
   const dur = o.d || 0.3, a = o.a ?? 0.005, g = ac.createGain(); let src, filt = null;
   if (o.n) { src = ac.createBufferSource(); src.buffer = noiseBuf; src.loop = true; src.playbackRate.value = o.rate || 1; }
   else { src = ac.createOscillator(); src.type = o.w || 'sine'; src.frequency.setValueAtTime(o.f0, t); if (o.f1) src.frequency.exponentialRampToValueAtTime(Math.max(8, o.f1), t + (o.fd || dur));
@@ -37,6 +47,10 @@ function layer(out, t, o) {
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur); g.connect(out);
   src.start(t + (o.at || 0)); src.stop(t + dur + 0.05);
 }
+function sampleLayer(out, t, o) { const buf = o.buf || pick(o.s); if (!buf) return 0; const src = ac.createBufferSource(); src.buffer = buf; const rate = o.r || 1; src.playbackRate.value = rate;
+  const g = ac.createGain(), v = o.v ?? 0.8, len = Math.min(o.d || 99, buf.duration / rate); g.gain.setValueAtTime(v, t); if (o.d) { g.gain.setValueAtTime(v, t + len * 0.7); g.gain.linearRampToValueAtTime(0.0001, t + len); }
+  let node = src; if (o.ft) { const f = ac.createBiquadFilter(); f.type = o.ft; f.frequency.value = o.c0 || 1000; f.Q.value = o.q || 0.7; src.connect(f); node = f; } node.connect(g); g.connect(out); src.start(t + (o.at || 0)); src.stop(t + (o.at || 0) + len + 0.05); return len; }
+const S = (s, o = {}) => ({ s, ...o });
 // громкость и панорама по положению: точка проецируется на экран, слышно примерно до 1500
 function where(x, z) { if (x == null || !cam) return [1, 0]; const d = Math.hypot(x - lx, z - lz); const k = Math.max(0, 1 - d / 1500); if (k <= 0) return [0, 0];
   let p = 0; try { const v = { x, y: 36, z }; const e = cam.matrixWorldInverse.elements; const vx = e[0] * v.x + e[4] * v.y + e[8] * v.z + e[12], vz = e[2] * v.x + e[6] * v.y + e[10] * v.z + e[14]; p = Math.max(-1, Math.min(1, vx / Math.max(60, Math.abs(vz)) * 0.9)); } catch (e) {}
@@ -48,7 +62,7 @@ function play(key, layers, o = {}) {
   const bus = ac.createGain(); bus.gain.value = v; const pan = ac.createStereoPanner ? ac.createStereoPanner() : null; if (pan) { pan.pan.value = p; bus.connect(pan); pan.connect(master); } else bus.connect(master);
   if (verb) { const sg = ac.createGain(); sg.gain.value = o.rev ?? 0.28; bus.connect(sg); sg.connect(verb); setTimeout(() => { try { sg.disconnect(); } catch (e) {} }, (3.2 + 0.3) * 1000 + 2000); }
   const sh = o.pitch ?? R(0.93, 1.07); let end = 0;
-  for (const L of layers) { const q = Object.assign({}, L); if (q.f0) q.f0 *= sh; if (q.f1) q.f1 *= sh; if (q.c0 && !q.n) q.c0 *= sh; if (q.n && q.rate) q.rate *= sh; layer(bus, now + (L.at || 0), q); end = Math.max(end, (L.at || 0) + (L.d || 0.3)); }
+  for (const L of layers) { const q = Object.assign({}, L); if (q.s) { q.r = (q.r || 1) * sh; const b = pick(q.s); if (!b) continue; q.buf = b; const len = Math.min(q.d || 99, b.duration / q.r); layer(bus, now, q); end = Math.max(end, (L.at || 0) + len); continue; } if (q.f0) q.f0 *= sh; if (q.f1) q.f1 *= sh; if (q.c0 && !q.n) q.c0 *= sh; if (q.n && q.rate) q.rate *= sh; layer(bus, now + (L.at || 0), q); end = Math.max(end, (L.at || 0) + (L.d || 0.3)); }
   live++; setTimeout(() => { live--; }, (end + 0.1) * 1000); setTimeout(() => { try { bus.disconnect(); } catch (e) {} }, (end + 2.9) * 1000);
 }
 
@@ -65,20 +79,23 @@ const chime = (f, d = 0.9, v = 0.3) => [{ w: 'sine', f0: f, d, v }, { w: 'sine',
 // ---------- оружие ----------
 // разрывы снарядов: у каждого оружия свой
 const IMPACT = {
-  // ядро пушки: сухой металлический удар, короткий гул и звон обшивки
-  'W-1': () => [{ n: 1, ft: 'highpass', c0: 1800, d: 0.06, v: 0.55, rate: 0.9 }, { w: 'triangle', f0: 190, f1: 70, d: 0.28, v: 0.45 }, { n: 1, ft: 'lowpass', c0: 2200, c1: 300, d: 0.35, v: 0.45 }, { w: 'sine', f0: 1240, d: 0.5, v: 0.05, at: 0.01, vib: 9, vd: 8 }, { w: 'sine', f0: 1873, d: 0.35, v: 0.035, at: 0.01 }, ...debris(5, 0.04, 0.25, 3200, 0.07)],
-  // ракета: резкий хлопок, огненный «вздох» и треск догорающего топлива
-  'W-2': () => [{ n: 1, ft: 'highpass', c0: 900, d: 0.05, v: 0.8 }, ...boom(58, 0.9, 1), { n: 1, ft: 'bandpass', c0: 700, c1: 200, q: 0.8, d: 1.1, a: 0.04, v: 0.45, rate: 0.6 }, { w: 'sawtooth', f0: 95, f1: 40, d: 0.6, v: 0.12, ft: 'lowpass', c0: 500 }, ...debris(12, 0.15, 0.9, 1800, 0.08)],
-  // мортира: тяжёлый глубокий разрыв, раскат и осыпающиеся обломки
-  'W-3': () => [...boom(34, 1.6, 1.25), { n: 1, ft: 'lowpass', c0: 450, c1: 60, d: 2.2, a: 0.05, v: 0.7, rate: 0.35 }, { w: 'sine', f0: 48, f1: 26, d: 1.8, v: 0.5 }, { n: 1, ft: 'bandpass', c0: 900, c1: 250, q: 1.2, d: 1.4, v: 0.25, at: 0.25, a: 0.2 }, ...debris(18, 0.4, 1.4, 1400, 0.09)],
+  // ядро пушки: металлический удар по корпусу, глухой бах и осколки
+  'W-1': () => [S('punchh', { v: 0.8, r: 0.8 }), S('metal', { v: 0.5, r: 0.9 }), S('imp', { v: 0.6 }), ...boom(70, 0.3, 0.35), ...debris(4, 0.05, 0.25, 3200, 0.05)],
+  // ракета: хрусткий взрыв с огненным хвостом
+  'W-2': () => [S('crunch', { v: 1 }), S('fire', { v: 0.35, r: 0.8, at: 0.05 }), ...boom(55, 0.7, 0.5)],
+  // мортира: глубокий тяжёлый разрыв, раскат и осыпь
+  'W-3': () => [S('lowex', { v: 1, r: 0.85 }), S('blast', { v: 0.6, r: 0.7 }), S('earth', { v: 0.35, r: 0.7, at: 0.15 }), ...debris(12, 0.4, 1.2, 1400, 0.06)],
 };
 const WPN = {
                                          // пушки: четыре выстрела бортом
 
 
-  'W-4': () => [{ w: 'square', f0: 220, f1: 90, d: 0.22, v: 0.25, ft: 'lowpass', c0: 1800 }, { w: 'sine', f0: 420, f1: 380, d: 0.6, v: 0.2, vib: 28, vd: 20 }, { n: 1, ft: 'highpass', c0: 3000, d: 0.12, v: 0.3 }], // гарпун: щелчок и звон троса
-  'W-6': () => [...zap(140, 0.5, 0.6), { w: 'square', f0: 60, d: 0.45, v: 0.18, ft: 'lowpass', c0: 900, vib: 50, vd: 30 }],                                     // тесла-дуга: треск
-  'W-7': () => [{ n: 1, ft: 'lowpass', c0: 5000, c1: 400, d: 0.45, v: 0.9 }, ...boom(85, 0.3, 0.7), { n: 1, ft: 'highpass', c0: 4000, d: 0.08, v: 0.4, rate: 0.7 }],   // картечница: рваный залп
+  // гарпун: хлёсткий выстрел пружины, свист троса и звон металла при натяжении
+  'W-4': () => [S('knife', { v: 0.9, r: 0.75 }), S('punchm', { v: 0.6, r: 0.8 }), S('metal', { v: 0.45, r: 1.2, at: 0.05 }), { w: 'sine', f0: 420, f1: 360, d: 0.9, v: 0.06, at: 0.08, vib: 22, vd: 14 }],
+  // тесла-дуга: мощный разряд с потрескиванием и гулом трансформатора
+  'W-6': () => [S('zap', { v: 0.9 }), S('relec', { v: 0.45, r: 0.8, at: 0.05 }), { w: 'square', f0: 50, d: 0.6, v: 0.07, ft: 'lowpass', c0: 400, vib: 50, vd: 8 }, ...debris(8, 0.05, 0.5, 6000, 0.05)],
+  // картечница: тяжёлый рваный залп, отдача и звон гильз
+  'W-7': () => [S('heavyshot', { v: 1 }), S('blast', { v: 0.45, r: 1.3 }), ...boom(70, 0.5, 0.5), ...[0.25, 0.33, 0.42].map(t => ({ w: 'sine', f0: R(2600, 3400), d: 0.25, v: 0.03, at: t }))],
 };
 // ---------- устройства (у каждого свой звук) ----------
 const DEV = {
@@ -162,11 +179,66 @@ const SKV = {
   // разворот: свист воздуха по дуге
   turn: p => [{ n: 1, ft: 'bandpass', c0: 2400 * p, c1: 500, q: 3, d: 0.5, a: 0.1, v: 0.45 }, { w: 'sine', f0: 900 * p, f1: 500, d: 0.4, v: 0.05 }],
 };
+// навыки на записях: у каждого своя основа и своя высота
+const SKS = {
+  'S-01': () => [0, 0.09, 0.18, 0.27].map(t => S('shoot', { v: 0.7, at: t, r: R(0.9, 1.1) })),
+  'S-02': () => [S('heavyshot', { v: 1, r: 0.7 }), S('metal', { v: 0.6, r: 0.6, at: 0.05 }), ...boom(45, 1, 0.7)],
+  'S-03': () => [S('charge7', { v: 0.6, r: 1.3 }), ...chime(2093, 0.8, 0.12).map(l => ({ ...l, at: 0.2 }))],
+  'S-04': () => [S('ff1', { v: 0.9 }), S('earth', { v: 0.4, r: 1.2 })],
+  'S-05': () => [S('thr2', { v: 1, r: 0.8 }), S('wind', { v: 0.4, r: 0.7 })],
+  'S-06': () => [S('earth2', { v: 0.8, r: 0.8 }), S('metal2', { v: 0.5, r: 0.6 }), ...[262, 392, 523].map((f, i) => ({ w: 'triangle', f0: f, d: 1.2, v: 0.08, at: 0.1 + i * 0.05 }))],
+  'S-07': () => [S('beam1', { v: 0.8 }), S('relec', { v: 0.35, at: 0.1 })],
+  'S-08': () => [S('heal3', { v: 0.9 }), S('wind1', { v: 0.3, r: 1.3 })],
+  'S-09': () => [S('dopen0', { v: 0.6 }), S('comp1', { v: 0.5, at: 0.25 }), S('heal6', { v: 0.6, at: 0.4 })],
+  'S-10': () => [S('wind3', { v: 1 }), S('wind0', { v: 0.5, r: 0.8, at: 0.2 })],
+  'S-11': () => [S('knife1', { v: 0.8, r: 0.8 }), S('plant1', { v: 0.6 })],
+  'S-12': () => [S('zapl0', { v: 0.6 }), S('comp3', { v: 0.6, at: 0.2 }), ...[0.6, 1.1].flatMap(t => chime(1760, 0.5, 0.08).map(l => ({ ...l, at: t })))],
+  'S-13': () => [S('light4', { v: 1 }), S('lowex1', { v: 0.6, r: 0.8, at: 0.1 }), S('relec', { v: 0.3, at: 0.05 })],
+  'S-14': () => [S('ice2', { v: 1 }), S('wind2', { v: 0.4, r: 0.6 })],
+  'S-15': () => [S('light1', { v: 0.9 }), S('zap1', { v: 0.6, at: 0.12 }), S('zap2', { v: 0.5, at: 0.24, r: 1.2 })],
+  'S-16': () => [0, 0.1, 0.2, 0.3, 0.4].map(t => S('zapl', { v: 0.6, at: t, r: R(0.85, 1.05) })),
+  'S-17': () => [S('charge13', { v: 0.6 }), ...chime(1568, 0.6, 0.14).map(l => ({ ...l, at: 0.25 }))],
+  'S-18': () => [S('ff3', { v: 0.9 }), S('glass0', { v: 0.3, r: 1.4 })],
+  'S-19': () => [S('metal4', { v: 0.8, r: 0.6 }), S('dclose1', { v: 0.7, r: 0.7, at: 0.2 }), ...boom(40, 0.9, 0.7).map(l => ({ ...l, at: 0.25 }))],
+  'S-20': () => [S('water3', { v: 0.9 }), S('slime0', { v: 0.4, r: 1.2, at: 0.1 })],
+  'S-21': () => [S('heal9', { v: 0.9 }), S('water0', { v: 0.3, r: 1.3 })],
+  'S-22': () => [S('dopen2', { v: 0.7 }), S('dclose0', { v: 0.6, at: 0.35 }), S('comp0', { v: 0.4, at: 0.5 })],
+  'S-23': () => [S('thr4', { v: 1 }), S('thr1', { v: 0.5, r: 1.3, at: 0.1 })],
+  'S-24': () => [S('charge9', { v: 0.7 }), S('wind4', { v: 0.4, r: 1.2 })],
+  'S-25': () => [S('charge5', { v: 0.8 }), S('rburst1', { v: 0.5, at: 0.15 })],
+  'S-26': () => [S('wind4', { v: 1, r: 0.8 }), S('grav1', { v: 0.4, r: 1.2 })],
+  'S-27': () => [S('slime1', { v: 0.7 }), S('water4', { v: 0.6, r: 0.8 })],
+  'S-28': () => [S('emp2', { v: 0.9 }), { w: 'sine', f0: 3520, d: 1.4, a: 0.05, v: 0.04 }],
+  'S-29': () => [0, 0.25, 0.5].map(t => S('dclose2', { v: 0.6, at: t, r: 1.2 })),
+  'S-30': () => [S('earth4', { v: 0.9 }), ...chorus([{ w: 'sawtooth', f0: 147, d: 1.3, a: 0.15, v: 0.16, ft: 'lowpass', c0: 900 }], 3, 0.008), ...chorus([{ w: 'sawtooth', f0: 220, d: 1.2, a: 0.2, v: 0.12, ft: 'lowpass', c0: 1100, at: 0.15 }], 3, 0.008)],
+  'S-31': () => [0, 0.08, 0.16, 0.24, 0.32, 0.4, 0.48, 0.56].map(t => S('lsmall', { v: 0.45, at: t, r: R(0.6, 0.8) })),
+  'S-32': () => [0, 0.2, 0.4].map(t => S('dopen1', { v: 0.5, at: t, r: 0.8 })).concat(boom(45, 0.6, 0.6)),
+  'S-33': () => [S('water1', { v: 0.8, r: 0.7 }), S('wind1', { v: 0.6, r: 0.6, at: 0.1 })],
+  'S-34': () => [S('rburst0', { v: 0.7 }), ...Array.from({ length: 8 }, (_, i) => ({ w: 'triangle', f0: i % 2 ? 1318 : 988, d: 0.05, v: 0.1, at: Math.pow(i / 8, 1.6) * 0.8 }))],
+  'S-35': () => [S('thr0', { v: 0.6 }), S('punchh', { v: 1, r: 0.6, at: 0.3 }), S('blast0', { v: 0.6, at: 0.3 })],
+  'S-36': () => [0, 0.1, 0.2].map(t => S('dclose', { v: 0.5, at: t, r: 1.5 })).concat([S('charge11', { v: 0.4, at: 0.3 })]),
+  'S-37': () => [S('wind0', { v: 0.8, r: 1.3 })],
+  'S-38': () => [S('ff4', { v: 0.8 }), S('comp2', { v: 0.4, at: 0.2 }), S('metal1', { v: 0.4, at: 0.1 })],
+};
+// устройства на записях
+const DEVS = {
+  'EQ-01': () => [S('emp0', { v: 1 }), S('zap3', { v: 0.5 })], 'EQ-02': () => [S('grav0', { v: 1 }), S('wind2', { v: 0.5, at: 0.1 })],
+  'EQ-03': () => [S('wind1', { v: 0.7, r: 0.6 }), S('water2', { v: 0.4, r: 0.5 })], 'EQ-04': () => [S('ice3', { v: 1 }), S('glass1', { v: 0.4 })],
+  'EQ-05': () => [S('dclose1', { v: 0.7 }), S('ff0', { v: 0.4, r: 0.7, at: 0.2 })], 'EQ-06': () => [S('grav2', { v: 1, r: 0.8 }), S('ff2', { v: 0.4, r: 0.6 })],
+  'EQ-07': () => [S('fire0', { v: 0.8, r: 1.2 }), ...whoosh(600, 4000, 0.5, 0.3)], 'EQ-08': () => [S('fire3', { v: 1 }), S('fire1', { v: 0.4, r: 0.7, at: 0.2 })],
+  'EQ-09': () => [S('ff2', { v: 0.9 }), S('glass2', { v: 0.3, r: 1.5 })], 'EQ-10': () => [S('charge13', { v: 0.6, r: 0.8 }), S('heal12', { v: 0.4, r: 0.7 })],
+  'EQ-11': () => [S('relec0', { v: 0.8 }), S('comp0', { v: 0.4 })], 'EQ-12': () => [S('dopen2', { v: 0.8 }), S('metal3', { v: 0.5, at: 0.3 })],
+  'EQ-13': () => [S('fire4', { v: 0.5, r: 1.4 }), { n: 1, ft: 'highpass', c0: 2500, d: 1, a: 0.02, v: 0.15, rate: 1.4 }], 'EQ-14': () => [S('relec5', { v: 0.6 }), S('rburst0', { v: 0.4, r: 0.7 }), { w: 'sawtooth', f0: 210, d: 1.2, v: 0.06, vib: 31, vd: 25, ft: 'bandpass', c0: 800, q: 2 }],
+  'EQ-15': () => [S('thr3', { v: 1 }), S('wind3', { v: 0.4, r: 1.3 })], 'EQ-16': () => [S('knife3', { v: 0.6, r: 0.7 }), S('metal0', { v: 0.4, r: 0.7, at: 0.2 }), { w: 'square', f0: 70, d: 0.9, v: 0.06, vib: 22, vd: 15, ft: 'lowpass', c0: 700 }],
+  'EQ-17': () => [S('dopen0', { v: 0.5 }), S('heal4', { v: 0.8, at: 0.2 })],
+};
 // ---------- мобы: семейство голоса и его высота ----------
 const MOBV = { 'MOB-01': ['buzz', 1.6], 'MOB-02': ['buzz', 1.1], 'MOB-03': ['squelch', 1], 'MOB-04': ['buzz', 2.1], 'MOB-05': ['flap', 1.4], 'MOB-06': ['ghost', 1], 'MOB-07': ['screech', 1.5],
   'MOB-08': ['crystal', 1], 'MOB-09': ['flap', 0.9], 'MOB-10': ['crystal', 1.5], 'MOB-11': ['click', 1], 'MOB-12': ['metal', 1], 'MOB-13': ['buzz', 0.6], 'MOB-14': ['metal', 0.8], 'MOB-15': ['squelch', 0.6],
   'MOB-16': ['rock', 1.2], 'MOB-17': ['rock', 0.7], 'MOB-18': ['whale', 1], 'MOB-19': ['metal', 0.55], 'MOB-20': ['hiss', 0.8], 'MOB-21': ['ghost', 1.5], 'MOB-22': ['ghost', 0.7], 'MOB-23': ['squelch', 1.4],
   'MOB-24': ['click', 1.6], 'MOB-25': ['squelch', 0.85], 'MOB-26': ['crystal', 0.6], 'MOB-27': ['screech', 0.8] };
+// записи для выстрелов и ударов мобов по семействам (добавляются к синтезу)
+const FAMS = { buzz: ['lsmall', 'punchm'], squelch: ['slime', 'slime'], flap: ['wind', 'punchm'], ghost: ['charge', 'charge'], screech: ['lpist', 'knife'], crystal: ['glass', 'glass'], click: ['relec', 'punchm'], metal: ['shoot', 'metal'], rock: ['earth', 'punchh'], whale: ['lowex', 'punchh'], hiss: ['light', 'relec'] };
 const FAM = {   // выстрел, укус/удар, крик (агрессия/смерть)
   buzz: [p => [{ w: 'sawtooth', f0: 400 * p, f1: 250 * p, d: 0.18, v: 0.18, vib: 70, vd: 40, ft: 'bandpass', c0: 1500 * p, q: 3 }], p => [{ w: 'sawtooth', f0: 220 * p, d: 0.25, v: 0.25, vib: 90, vd: 60, ft: 'lowpass', c0: 2000 }], p => [{ w: 'sawtooth', f0: 300 * p, f1: 120 * p, d: 0.5, v: 0.2, vib: 80, vd: 80, ft: 'bandpass', c0: 1400, q: 2 }]],
   squelch: [p => [{ n: 1, ft: 'bandpass', c0: 700 * p, c1: 250, q: 5, d: 0.25, v: 0.4 }], p => [{ w: 'sine', f0: 180 * p, f1: 90, d: 0.2, v: 0.4 }, { n: 1, ft: 'lowpass', c0: 900, d: 0.25, v: 0.3, rate: 0.5 }], p => [{ w: 'sine', f0: 160 * p, f1: 60, d: 0.6, v: 0.3, vib: 12, vd: 30 }]],
@@ -225,12 +297,12 @@ export const SFX = {
   toggle() { on = !on; init(); if (master) master.gain.value = on ? vol : 0; try { localStorage.setItem('sky-sfx', JSON.stringify({ on, vol })); } catch (e) {} return on; },
   tick(o) { engineTick(o.speed, o.max, o.dash, o.alive); flameTick(o.flame); },
   weapon(id) { const f = WPN[id]; if (f) play('w' + id, f(), { v: 0.8, gap: 0.03 }); },
-  device(id) { const f = DEV[id]; if (f) play('d' + id, f(), { v: 0.85 }); },
-  skill(id) { const k = SK_KIND[id] || 'buff', p = 0.85 + hash(id) * 0.35; play('s' + id, SKV[k](p), { v: 0.85, rev: 0.4 }); },
+  device(id) { const g = DEVS[id]; if (g) return play('d' + id, g(), { v: 0.95 }); const f = DEV[id]; if (f) play('d' + id, f(), { v: 0.85 }); },
+  skill(id) { const f = SKS[id]; if (f) return play('s' + id, f(), { v: 0.95, rev: 0.35 }); const k = SK_KIND[id] || 'buff', p = 0.85 + hash(id) * 0.35; play('s' + id, SKV[k](p), { v: 0.85, rev: 0.4 }); },
   dash() { play('dash', [...whoosh(300, 2600, 0.45, 0.6), { w: 'sawtooth', f0: 90, f1: 260, d: 0.35, v: 0.15, ft: 'lowpass', c0: 900 }], { v: 0.8 }); },
   // моб стреляет, кусает или кричит (kind: 0 — выстрел, 1 — ближний удар, 2 — крик)
-  mob(m, kind = 0, x, z) { const k = mobKey(m); if (!k) return; const b = BOSSV[k]; if (b) { play('b' + k + kind, b[kind === 2 ? 0 : 1](0.95 + hash(k) * 0.1), { x: x ?? m.x, z: z ?? m.z, v: 1, gap: kind === 2 ? 2 : 0.25 }); return; }
-    const [fam, p] = MOBV[k] || ['buzz', 1]; play('m' + k + kind, FAM[fam][Math.min(2, kind)](p), { x: x ?? m.x, z: z ?? m.z, v: kind === 2 ? 1 : 0.9, gap: kind === 2 ? 0.8 : 0.09, rev: 0.3 }); },
+  mob(m, kind = 0, x, z) { const k = mobKey(m); if (!k) return; const b = BOSSV[k]; if (b) { const bs = kind === 2 ? [] : [S(['crunch', 'earth', 'water', 'glass', 'blast', 'lowex', 'metal', 'water', 'wind'][+k.slice(5) - 1] || 'blast', { v: 0.8, r: 0.7 })]; play('b' + k + kind, [...bs, ...b[kind === 2 ? 0 : 1](0.95 + hash(k) * 0.1)], { x: x ?? m.x, z: z ?? m.z, v: 1, gap: kind === 2 ? 2 : 0.25 }); return; }
+    const [fam, p] = MOBV[k] || ['buzz', 1]; const sm = kind < 2 && FAMS[fam] ? [S(FAMS[fam][kind], { v: 0.7, r: Math.min(1.6, Math.max(0.55, p * 0.9)) })] : []; play('m' + k + kind, [...sm, ...FAM[fam][Math.min(2, kind)](p)], { x: x ?? m.x, z: z ?? m.z, v: kind === 2 ? 1 : 0.9, gap: kind === 2 ? 0.8 : 0.09, rev: 0.3 }); },
   // особые приёмы мобов
   special(sp, x, z) { const L = {
       boom: [{ w: 'square', f0: 880, d: 0.08, v: 0.15 }, { w: 'square', f0: 880, d: 0.08, v: 0.15, at: 0.2 }, { w: 'square', f0: 1200, d: 0.08, v: 0.15, at: 0.35 }],
@@ -250,7 +322,7 @@ export const SFX = {
       tug: [{ w: 'square', f0: 60, d: 0.8, v: 0.15, vib: 18, vd: 10, ft: 'lowpass', c0: 400 }, { n: 1, ft: 'bandpass', c0: 2000, q: 10, d: 0.6, v: 0.15 }],
       slam: [{ w: 'sine', f0: 60, f1: 120, d: 1.2, a: 0.8, v: 0.3 }],
       beam: zap(160, 1.6, 0.4),
-    }[sp]; if (L) play('sp' + sp, L, { x, z, v: 1, gap: 0.3, rev: 0.35 }); },
+    }[sp]; const SPS = { leech: 'slime0', thief: 'rburst1', web: 'knife2', brood: 'lsmall', hex: 'charge2', sleep: 'heal14', rot: 'slime1', jam: 'comp2', ink: 'water2', pull: 'ff4', mend: 'heal1', fog: 'wind2', aim: 'charge0', tug: 'metal2', slam: 'earth3', beam: 'beam3' }; if (L && SPS[sp]) L.unshift(S(SPS[sp], { v: 0.75, r: 0.85 })); if (L) play('sp' + sp, L, { x, z, v: 1, gap: 0.3, rev: 0.35 }); },
   // попадание по мобу: звук зависит от типа урона (0 кин., 1 взр., 2 пробив., 3 огонь, 4 ток)
   hit(type, crit, x, z, big) { const L = [
       [{ n: 1, ft: 'bandpass', c0: 1800, q: 2, d: 0.08, v: 0.35 }, { w: 'square', f0: 300, f1: 150, d: 0.05, v: 0.12 }],
@@ -259,11 +331,12 @@ export const SFX = {
       [{ n: 1, ft: 'lowpass', c0: 1100, d: 0.18, v: 0.25, rate: 0.7 }],
       [{ n: 1, ft: 'highpass', c0: 4000, d: 0.1, v: 0.3, rate: 1.5 }, { w: 'square', f0: 120, d: 0.08, v: 0.08 }],
     ][type] || []; const c = crit ? [{ w: 'sine', f0: 1760, d: 0.2, v: 0.12 }, { w: 'sine', f0: 2637, d: 0.25, v: 0.08, at: 0.04 }] : [];
+    const hs = [['imp', 1.2], ['punchm', 1], ['metal', 1.3], ['fire', 1.5], ['relec', 1.3]][type]; if (hs && pick(hs[0])) L.unshift(S(hs[0], { v: 0.5, r: hs[1], d: 0.35 }));
     play('h' + type + (crit ? 'c' : ''), [...L, ...c], { x, z, v: big ? 0.7 : 0.45, gap: 0.06 }); },
   // взрыв: размер задаёт глубину
   impact(id, x, z) { const f = IMPACT[id]; if (!f) return; muteEx = ac ? ac.currentTime + 0.03 : 0; play('i' + id, f(), { x, z, v: 1, gap: id === 'W-1' ? 0.05 : 0.08, rev: id === 'W-3' ? 0.5 : 0.35 }); },
   shell(x, z) { play('shell', [{ n: 1, ft: 'bandpass', c0: 1300, q: 3, d: 0.12, v: 0.6 }, { w: 'triangle', f0: 320, f1: 180, d: 0.25, v: 0.35 }, ...[0.08, 0.14, 0.19, 0.26, 0.31, 0.4, 0.47, 0.55].map((t, i) => ({ w: 'sine', f0: R(2200, 3600), d: R(0.25, 0.5), v: 0.12 - i * 0.008, at: t })), { n: 1, ft: 'highpass', c0: 6000, d: 0.8, a: 0.1, v: 0.08, at: 0.1 }], { x, z, v: 0.9, rev: 0.4, gap: 0.3 }); },
-  explode(s, x, z) { if (ac && ac.currentTime < muteEx) return; const f = 70 / Math.sqrt(Math.max(0.3, s)); play('ex' + Math.round(s * 3), [...boom(f, 0.5 + s * 0.4, Math.min(1.2, 0.5 + s * 0.3)), { n: 1, ft: 'lowpass', c0: 3500, c1: 200, d: 0.4 + s * 0.4, v: 0.5, rate: 0.6 + 0.4 / s }], { x, z, v: 1, gap: 0.04 }); },
+  explode(s, x, z) { if (ac && ac.currentTime < muteEx) return; if (pick('crunch')) return play('ex' + Math.round(s * 3), [S(s > 1.5 ? 'grav' : 'crunch', { v: Math.min(1, 0.5 + s * 0.3), r: 1.15 / Math.sqrt(Math.max(0.4, s)) }), ...boom(70 / Math.sqrt(Math.max(0.3, s)), 0.4 + s * 0.3, 0.4)], { x, z, v: 1, gap: 0.05 }); const f = 70 / Math.sqrt(Math.max(0.3, s)); play('ex' + Math.round(s * 3), [...boom(f, 0.5 + s * 0.4, Math.min(1.2, 0.5 + s * 0.3)), { n: 1, ft: 'lowpass', c0: 3500, c1: 200, d: 0.4 + s * 0.4, v: 0.5, rate: 0.6 + 0.4 / s }], { x, z, v: 1, gap: 0.04 }); },
   kill(m) { SFX.mob(m, 2); },
   hurt(type, dmg) { const big = dmg > 60; play('hurt' + type, [...boom(big ? 45 : 70, big ? 0.6 : 0.3, big ? 0.9 : 0.6), { n: 1, ft: 'bandpass', c0: [1500, 900, 2400, 800, 3500][type] || 1500, q: 3, d: 0.3, v: 0.4 }, { w: 'square', f0: 140, f1: 70, d: 0.25, v: 0.12, ft: 'lowpass', c0: 1000 }], { v: 0.75, gap: 0.12 }); },
   death() { play('death', [...boom(30, 2.2, 1.2), { n: 1, ft: 'lowpass', c0: 4000, c1: 120, d: 2.5, v: 0.8 }, { w: 'sawtooth', f0: 200, f1: 30, d: 2, v: 0.2, ft: 'lowpass', c0: 1200 }], { v: 1 }); },
