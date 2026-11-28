@@ -93,7 +93,7 @@ const WPN = {
   // гарпун: хлёсткий выстрел пружины, свист троса и звон металла при натяжении
   'W-4': () => [S('knife', { v: 0.9, r: 0.75 }), S('punchm', { v: 0.6, r: 0.8 }), S('metal', { v: 0.45, r: 1.2, at: 0.05 }), { w: 'sine', f0: 420, f1: 360, d: 0.9, v: 0.06, at: 0.08, vib: 22, vd: 14 }],
   // тесла-дуга: мощный разряд с потрескиванием и гулом трансформатора
-  'W-6': () => [S('zap', { v: 0.9 }), S('relec', { v: 0.45, r: 0.8, at: 0.05 }), { w: 'square', f0: 50, d: 0.6, v: 0.07, ft: 'lowpass', c0: 400, vib: 50, vd: 8 }, ...debris(8, 0.05, 0.5, 6000, 0.05)],
+  'W-6': () => [S('zap2', { v: 0.9 }), S('zap1', { v: 0.5, r: 0.8, at: 0.04 }), { w: 'square', f0: 50, d: 0.5, v: 0.06, ft: 'lowpass', c0: 400, vib: 50, vd: 8 }, ...debris(6, 0.03, 0.4, 6000, 0.05)],
   // картечница: тяжёлый рваный залп, отдача и звон гильз
   'W-7': () => [S('heavyshot', { v: 1 }), S('blast', { v: 0.45, r: 1.3 }), ...boom(70, 0.5, 0.5), ...[0.25, 0.33, 0.42].map(t => ({ w: 'sine', f0: R(2600, 3400), d: 0.25, v: 0.03, at: t }))],
 };
@@ -227,7 +227,7 @@ const DEVS = {
   'EQ-05': () => [S('dclose1', { v: 0.7 }), S('ff0', { v: 0.4, r: 0.7, at: 0.2 })], 'EQ-06': () => [S('grav2', { v: 1, r: 0.8 }), S('ff2', { v: 0.4, r: 0.6 })],
   'EQ-07': () => [S('fire0', { v: 0.8, r: 1.2 }), ...whoosh(600, 4000, 0.5, 0.3)], 'EQ-08': () => [S('fire3', { v: 1 }), S('fire1', { v: 0.4, r: 0.7, at: 0.2 })],
   'EQ-09': () => [S('ff2', { v: 0.9 }), S('glass2', { v: 0.3, r: 1.5 })], 'EQ-10': () => [S('charge13', { v: 0.6, r: 0.8 }), S('heal12', { v: 0.4, r: 0.7 })],
-  'EQ-11': () => [S('relec0', { v: 0.8 }), S('comp0', { v: 0.4 })], 'EQ-12': () => [S('dopen2', { v: 0.8 }), S('metal3', { v: 0.5, at: 0.3 })],
+  'EQ-11': () => [S('dclose0', { v: 0.6 }), S('zap0', { v: 0.6, at: 0.2 })], 'EQ-12': () => [S('dopen2', { v: 0.8 }), S('metal3', { v: 0.5, at: 0.3 })],
   'EQ-13': () => [S('fire4', { v: 0.5, r: 1.4 }), { n: 1, ft: 'highpass', c0: 2500, d: 1, a: 0.02, v: 0.15, rate: 1.4 }], 'EQ-14': () => [S('relec5', { v: 0.6 }), S('rburst0', { v: 0.4, r: 0.7 }), { w: 'sawtooth', f0: 210, d: 1.2, v: 0.06, vib: 31, vd: 25, ft: 'bandpass', c0: 800, q: 2 }],
   'EQ-15': () => [S('thr3', { v: 1 }), S('wind3', { v: 0.4, r: 1.3 })], 'EQ-16': () => [S('knife3', { v: 0.6, r: 0.7 }), S('metal0', { v: 0.4, r: 0.7, at: 0.2 }), { w: 'square', f0: 70, d: 0.9, v: 0.06, vib: 22, vd: 15, ft: 'lowpass', c0: 700 }],
   'EQ-17': () => [S('dopen0', { v: 0.5 }), S('heal4', { v: 0.8, at: 0.2 })],
@@ -331,7 +331,7 @@ export const SFX = {
       [{ n: 1, ft: 'lowpass', c0: 1100, d: 0.18, v: 0.25, rate: 0.7 }],
       [{ n: 1, ft: 'highpass', c0: 4000, d: 0.1, v: 0.3, rate: 1.5 }, { w: 'square', f0: 120, d: 0.08, v: 0.08 }],
     ][type] || []; const c = crit ? [{ w: 'sine', f0: 1760, d: 0.2, v: 0.12 }, { w: 'sine', f0: 2637, d: 0.25, v: 0.08, at: 0.04 }] : [];
-    const hs = [['imp', 1.2], ['punchm', 1], ['metal', 1.3], ['fire', 1.5], ['relec', 1.3]][type]; if (hs && pick(hs[0])) L.unshift(S(hs[0], { v: 0.5, r: hs[1], d: 0.35 }));
+    const hs = [['imp', 1.2], ['punchm', 1], ['metal', 1.3], ['fire', 1.5], ['zap0', 1.1]][type]; if (hs && pick(hs[0])) L.unshift(S(hs[0], { v: 0.5, r: hs[1], d: 0.35 }));
     play('h' + type + (crit ? 'c' : ''), [...L, ...c], { x, z, v: big ? 0.7 : 0.45, gap: 0.06 }); },
   // взрыв: размер задаёт глубину
   impact(id, x, z) { const f = IMPACT[id]; if (!f) return; muteEx = ac ? ac.currentTime + 0.03 : 0; play('i' + id, f(), { x, z, v: 1, gap: id === 'W-1' ? 0.05 : 0.08, rev: id === 'W-3' ? 0.5 : 0.35 }); },
@@ -360,7 +360,7 @@ export const SFX = {
   click() { play('click', [{ w: 'square', f0: 1400, d: 0.025, v: 0.06 }, { n: 1, ft: 'bandpass', c0: 3000, q: 4, d: 0.03, v: 0.1 }], { v: 0.5, gap: 0.03 }); },
   warn(x, z) { play('warn', [{ w: 'square', f0: 660, d: 0.1, v: 0.08 }, { w: 'square', f0: 660, d: 0.1, v: 0.08, at: 0.18 }], { x, z, v: 0.6, gap: 0.6 }); },
   portal() { play('portal', [{ w: 'sine', f0: 120, f1: 900, d: 1.6, a: 0.3, v: 0.25, vib: 4, vd: 40 }, ...whoosh(200, 2500, 1.6, 0.5)], { v: 0.9, gap: 1 }); },
-  bolt(x, z) { play('bolt', zap(R(150, 300), 0.2, 0.25), { x, z, v: 0.5, gap: 0.12 }); },
+  bolt(x, z) { play('bolt', [S('zap1', { v: 0.6, r: R(0.9, 1.15) }), ...zap(R(150, 300), 0.15, 0.15)], { x, z, v: 0.7, gap: 0.12 }); },
   ring(x, z) { play('ring', whoosh(250, 1200, 0.5, 0.35), { x, z, v: 0.6, gap: 0.2 }); },
   shop() { play('shop', [0, 0.06, 0.12].flatMap(t => [{ w: 'square', f0: 2000, d: 0.04, v: 0.06, at: t }]).concat(chime(1046, 0.8, 0.15).map(l => ({ ...l, at: 0.18 }))), { v: 0.7 }); },
   fanfare() { play('fan', [523, 659, 784, 1046, 784, 1046].map((f, i) => ({ w: 'triangle', f0: f, d: i === 5 ? 1.5 : 0.3, v: 0.18, at: [0, 0.15, 0.3, 0.45, 0.75, 0.9][i] })), { v: 1, pitch: 1 }); },

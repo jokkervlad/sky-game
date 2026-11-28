@@ -1,16 +1,16 @@
-import { applyModel, loadModel, dropModel, pauseModel } from './models.js?v=202611281800';
-import * as D from './data.js?v=202611281800';
-import { initHangar, dmgTable } from './menu.js?v=202611281800';
-import { COINS } from './coins.js?v=202611281800';
-import { initBuild, waterMat } from './build.js?v=202611281800';
-import { initMission } from './mission.js?v=202611281800';
-import { LOOT } from './loot.js?v=202611281800';
-import * as FX from './fx.js?v=202611281800';
-import { ICONS } from './icons.js?v=202611281800';
-import { NET } from './net.js?v=202611281800';
-import { SFX } from './sfx.js?v=202611281800';
+import { applyModel, loadModel, dropModel, pauseModel } from './models.js?v=202611281940';
+import * as D from './data.js?v=202611281940';
+import { initHangar, dmgTable } from './menu.js?v=202611281940';
+import { COINS } from './coins.js?v=202611281940';
+import { initBuild, waterMat } from './build.js?v=202611281940';
+import { initMission } from './mission.js?v=202611281940';
+import { LOOT } from './loot.js?v=202611281940';
+import * as FX from './fx.js?v=202611281940';
+import { ICONS } from './icons.js?v=202611281940';
+import { NET } from './net.js?v=202611281940';
+import { SFX } from './sfx.js?v=202611281940';
 SFX.setCamera(camera); SFX.names(D);
-import { THREE, scene, camera, renderer, canvas, sunDir, sun, cloud, cloudMat, sky, islands, spires, makeIsland, makeSpire, rng, perlin3, STILL, vortex, CLUMP_G, CLUMP_M, CLUMP_D, ridged3, hemi, ROCK_VARIANTS, ROCKS } from './main.js?v=202611281800';
+import { THREE, scene, camera, renderer, canvas, sunDir, sun, cloud, cloudMat, sky, islands, spires, makeIsland, makeSpire, rng, perlin3, STILL, vortex, CLUMP_G, CLUMP_M, CLUMP_D, ridged3, hemi, ROCK_VARIANTS, ROCKS } from './main.js?v=202611281940';
 
 const PLANE = 36;             // высота, на которой идёт вся игра
 const $ = id => document.getElementById(id);
@@ -688,21 +688,27 @@ addEventListener('keydown', e => { const c = e.code; if (modalOn) { e.preventDef
   else if (a.startsWith('skill')) { const n = slots.findIndex(q => q.kind === 's' && q.key === a); if (n >= 0) use(n); }
   else if (a === 'act') interact(); else if (a === 'target') cycleTarget(); else if (a === 'help') { helpOn = !helpOn; $('help').style.display = helpOn ? '' : 'none'; } else if (a === 'menu') openHangar();
   else if (a === 'swap') log(`Замена: держите ${keyName(KEY.swap)} и нажмите клавишу слота`);
-  else if (DASH[a] && held('dash')) dash(...DASH[P.hex > 0 ? HEXK[a] : a]); else if (a === 'dash') { const h = Object.keys(DASH).filter(k => held(k)); if (h.length === 1) dash(...DASH[h[0]]); } });
+  else if (DASH[a] && held('dash')) dash(...DASH[P.hex > 0 ? HEXK[a] : a]); else if (a === 'dash') { const h = Object.keys(DASH).filter(k => held(k)); if (h.length === 1) dash(...DASH[h[0]]); else if (!h.length) dashNose(); } });
 addEventListener('keyup', e => { keys.delete(e.code); }); addEventListener('blur', () => { keys.clear(); });
+// рывок по носу, а если корабль летит к точке — прямо к ней
+function dashNose() { if (P.goal) { const gx = P.goal.x - P.x, gz = P.goal.z - P.z, l = Math.hypot(gx, gz) || 1, fx = gx / l, fz = gz / l; dash(Math.cos(P.yaw) * fx - Math.sin(P.yaw) * fz, Math.sin(P.yaw) * fx + Math.cos(P.yaw) * fz); } else dash(0, 1); }
 function dash(side, fwd) { if (P.dead || P.dashCd > 0 || P.anchor > 0 || P.sleep > 0 || P.rooted > 0) return; SFX.dash(); if (NET.client) NET.req('dash', 1); for (const m of mobs) if (m.att) { m.att = false; m.cd = 5; m.kx = (rnd() - 0.5) * 300; m.kz = (rnd() - 0.5) * 300; } const lx = Math.cos(P.yaw) * side + Math.sin(P.yaw) * fwd, lz = -Math.sin(P.yaw) * side + Math.cos(P.yaw) * fwd; const v = 340 * (has('F-04') ? 2 : 1) * (1 + shopUp('spd') / 100); P.dvx = lx * v; P.dvz = lz * v; P.dashCd = (1.2 - (has('CREW-02') ? 0.3 : 0)) * (has('CREW-10') ? 0.8 : 1); P.dashT = 0.4; shockRing(P.x, P.z, 60, 0x8dff2a); if (P.flood > 0) flood(P.flood - 1);
   if (has('F-25')) { for (const m of inR(P.x, P.z, 70)) hitMob(m, 60, 4, { color: '#7DF9FF' }); burst(P.x, P.z, 70, '#7DF9FF', 16); }
   for (let i = 0; i < 26; i++) fire.emit({ x: P.x + (rnd() - 0.5) * 20, y: PLANE + (rnd() - 0.5) * 8, z: P.z + (rnd() - 0.5) * 20, vx: -lx * (40 + rnd() * 120), vy: (rnd() - 0.5) * 30, vz: -lz * (40 + rnd() * 120), life: 0.4 + rnd() * 0.3, s0: 16, s1: 3, r: 0.35, g: 2.2, b: 0.05, a: 1, drag: 2 }); }
 function cycleTarget() { const list = mobs.filter(m => !m.dead && dist2(P.x, P.z, m.x, m.z) < 900).sort((a, b) => dist2(P.x, P.z, a.x, a.z) - dist2(P.x, P.z, b.x, b.z)); if (!list.length) return; const i = list.indexOf(target); target = list[(i + 1) % list.length]; inspect = target; inspDirty = true; if (!has('CREW-01')) P.aim = 0; }
 let camYaw = 0, camPitch = 0.5, camDist = 400, drag = false, moved = 0, lx = 0, ly = 0;
 canvas.addEventListener('contextmenu', e => e.preventDefault());
+// движение кликом (как в Dota): корабль летит к точке на уровне облаков и тормозит у неё; любая из W/A/S/D отменяет точку
+const RAY = new THREE.Raycaster(), MPL = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), MV = new THREE.Vector3();
+const goMark = new THREE.Mesh(new THREE.RingGeometry(14, 18, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xd8ff6a, transparent: true, opacity: 0.85, depthWrite: false })); goMark.visible = false; goMark.renderOrder = 9; scene.add(goMark);
+function moveTo(e) { if (P.dead) return; MPL.constant = -PLANE; RAY.setFromCamera({ x: e.clientX / innerWidth * 2 - 1, y: -(e.clientY / innerHeight) * 2 + 1 }, camera); if (!RAY.ray.intersectPlane(MPL, MV)) return; P.goal = { x: MV.x, z: MV.z }; goMark.position.set(MV.x, PLANE + 2, MV.z); goMark.visible = true; goMark.scale.setScalar(1.6); }
 canvas.addEventListener('pointerdown', e => { drag = e.button === 2; moved = 0; lx = e.clientX; ly = e.clientY; canvas.setPointerCapture(e.pointerId); });
 canvas.addEventListener('pointermove', e => { moved += Math.abs(e.clientX - lx) + Math.abs(e.clientY - ly); if (drag) { camYaw -= (e.clientX - lx) * 0.005; camPitch = clamp(camPitch + (e.clientY - ly) * 0.004, 0.16, 1.35); } lx = e.clientX; ly = e.clientY; });
-canvas.addEventListener('pointerup', e => { if (e.button === 0 && moved < 6) { let best = null, bd = 70; for (const m of mobs) { if (m.dead) continue; V.set(m.x, PLANE, m.z).project(camera); if (V.z > 1) continue; const d = Math.hypot((V.x * 0.5 + 0.5) * innerWidth - e.clientX, (-V.y * 0.5 + 0.5) * innerHeight - e.clientY); if (d < bd) { bd = d; best = m; } } if (best) { inspect = best; inspDirty = true; } if (best && best !== target) { target = best; if (!has('CREW-01')) P.aim = 0; } } drag = false; });
+canvas.addEventListener('pointerup', e => { if (e.button === 0 && moved < 6) { let best = null, bd = 70; for (const m of mobs) { if (m.dead) continue; V.set(m.x, PLANE, m.z).project(camera); if (V.z > 1) continue; const d = Math.hypot((V.x * 0.5 + 0.5) * innerWidth - e.clientX, (-V.y * 0.5 + 0.5) * innerHeight - e.clientY); if (d < bd) { bd = d; best = m; } } if (best) { inspect = best; inspDirty = true; } if (best && best !== target) { target = best; if (!has('CREW-01')) P.aim = 0; } if (!best) moveTo(e); } else if (e.button === 2 && moved < 6) moveTo(e); drag = false; });
 canvas.addEventListener('wheel', e => { e.preventDefault(); camDist = clamp(camDist * (1 + Math.sign(e.deltaY) * 0.1), 140, 1300); }, { passive: false });
 // «Потоп» (BOSS-8): вода на экране. Первый толчок снимает половину, второй — всё. В тесте вместо союзника работает рывок
 function flood(n) { P.flood = n; const el = $('flood'); el.className = n >= 2 ? 'f2' : n === 1 ? 'f1' : ''; $('flood-t').textContent = n >= 2 ? `Экран залит водой. В сети вас должен толкнуть союзник; в тесте сделайте рывок (${keyName(KEY.dash)} + направление)` : n === 1 ? 'Половина воды сошла. Нужен второй толчок' : ''; }
-function helpText() { const k = a => `<b>${keyName(KEY[a])}</b>`; const sk = activeSkills(); $('help-body').innerHTML = `<div>${k('fwd')} разгон · ${k('back')} тормоз, затем задний ход · ${k('left')} ${k('right')} поворот</div><div>${k('dash')} + направление: рывок</div><div>Цель выбирается сама. <b>Клик</b> или ${k('target')}: сменить</div><div>${slots.filter(q => q.kind === 'w').map(q => k(q.key)).join(' ')} оружие · ${slots.filter(q => q.kind === 'd').map(q => k(q.key)).join(' ')} техустройства</div><div>${sk.length ? sk.map((_, i) => k('skill' + (i + 1))).join(' ') + ' навыки специальности' : 'Навыки откроются со второй миссии (этап в ангаре)'}</div><div>${k('swap')} + клавиша слота: заменить оружие или устройство</div><div>${k('act')} действие рядом с объектом · ${k('menu')} ангар</div><div><b>Правая кнопка мыши</b>: камера · <b>колесо</b>: приближение</div>`; }
+function helpText() { const k = a => `<b>${keyName(KEY[a])}</b>`; const sk = activeSkills(); $('help-body').innerHTML = `<div>${k('fwd')} разгон · ${k('back')} тормоз, затем задний ход · ${k('left')} ${k('right')} поворот</div><div><b>Клик</b> по облакам (или правой кнопкой): лететь в эту точку</div><div>${k('dash')}: рывок по носу или к точке · ${k('dash')} + направление: рывок в сторону · держать ${k('dash')}: рывок на каждой перезарядке</div><div>Цель выбирается сама. <b>Клик</b> по врагу или ${k('target')}: сменить</div><div>${slots.filter(q => q.kind === 'w').map(q => k(q.key)).join(' ')} оружие · ${slots.filter(q => q.kind === 'd').map(q => k(q.key)).join(' ')} техустройства</div><div>${sk.length ? sk.map((_, i) => k('skill' + (i + 1))).join(' ') + ' навыки специальности' : 'Навыки откроются со второй миссии (этап в ангаре)'}</div><div>${k('swap')} + клавиша слота: заменить оружие или устройство</div><div>${k('act')} действие рядом с объектом · ${k('menu')} ангар</div><div><b>Правая кнопка мыши</b>: камера · <b>колесо</b>: приближение</div>`; }
 
 // ---------- качество ----------
 // ---------- качество ----------
@@ -814,14 +820,19 @@ function update(dt) {
   if (P.dead > 0) { P.dead -= dt; $('dead-t').textContent = Math.ceil(P.dead); if (P.dead <= 0) { P.dead = 0; P.hp = P.revive ? Math.round(S.hp * P.revive) : S.hp; if (!P.revive) { [P.x, P.z] = MIS.cp(); P.x += teamSlot() * 40; } P.revive = 0; P.speed = 0; P.dvx = 0; P.dvz = 0; P.second = false; ship.visible = true; $('dead').style.display = 'none'; for (const m of mobs) m.aggro = false; first = true; log('Корабль снова в строю'); } }
   else {
     for (const k of ['wind', 'buffW', 'buffA', 'cry', 'anchor', 'over', 'will', 'bots', 'gambit', 'dive', 'rapid', 'tail', 'burn', 'turbo', 'kit', 'fSpd', 'fArm', 'fDmg', 'wArm', 'wCd', 'wRep', 'mirror', 'bubble', 'shock', 'probe', 'bull', 'hex', 'sleep', 'ink', 'rot', 'cover', 'roar']) dec(k, dt);
-    const sh = held('dash'); const turn = (sh || P.anchor > 0) ? 0 : (held('left') ? 1 : 0) - (held('right') ? 1 : 0); turnNow = turn;
-    const maxSp = 125 * S.speed * (P.fSpd > 0 ? 1.2 : 1) * (P.wind > 0 ? 1.3 : 1) * (P.tail > 0 ? 1.4 : 1) * (P.burn > 0 ? 2 : 1) * (P.turbo > 0 ? 3 : 1) * (P.cry > 0 ? 1.15 : 1) * (P.over > 0 ? 1.15 : 1) * (has('F-30') && P.hp < S.hp * 0.25 ? 1.3 : 1) * (P.web > 0 && !has('F-19') ? 0.4 : 1) * (1 - 0.1 * Math.min(5, P.leech || 0)); const accel = held('fwd') && !held('back') && P.anchor <= 0;
+    if (P.goal && (held('fwd') || held('back') || held('left') || held('right') || P.dead)) { P.goal = null; goMark.visible = false; }
+    let gTurn = 0, gAcc = false, gBrake = false; if (P.goal) { const gx = P.goal.x - P.x, gz = P.goal.z - P.z, gd = Math.hypot(gx, gz); let dy = Math.atan2(gx, gz) - P.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      if (gd < 22 + Math.abs(P.speed) * 0.15) { P.goal = null; goMark.visible = false; gBrake = true; } else { gTurn = clamp(dy * 2.5, -1, 1); gAcc = Math.abs(dy) < 1.1 && gd > P.speed * P.speed / 280; gBrake = !gAcc && (Math.abs(dy) > 1.6 || gd < 60); } goMark.scale.setScalar(lerp(goMark.scale.x, 1, 1 - Math.exp(-6 * dt))); goMark.rotation.y += dt; }
+    const sh = held('dash') && !P.goal; const turn = P.anchor > 0 ? 0 : P.goal ? gTurn : sh ? 0 : (held('left') ? 1 : 0) - (held('right') ? 1 : 0); turnNow = turn;
+    const maxSp = 125 * S.speed * (P.fSpd > 0 ? 1.2 : 1) * (P.wind > 0 ? 1.3 : 1) * (P.tail > 0 ? 1.4 : 1) * (P.burn > 0 ? 2 : 1) * (P.turbo > 0 ? 3 : 1) * (P.cry > 0 ? 1.15 : 1) * (P.over > 0 ? 1.15 : 1) * (has('F-30') && P.hp < S.hp * 0.25 ? 1.3 : 1) * (P.web > 0 && !has('F-19') ? 0.4 : 1) * (1 - 0.1 * Math.min(5, P.leech || 0)); const accel = (held('fwd') || gAcc) && !held('back') && P.anchor <= 0;
     if (P.anchor > 0) P.speed = 0;
     else if (held('back')) P.speed = P.speed > 0 ? Math.max(0, P.speed - 140 * dt) : Math.max(-26, P.speed - 30 * dt);
+    else if (gBrake) P.speed = Math.max(0, P.speed - 140 * dt);
     else if (accel) P.speed = Math.min(maxSp, P.speed + (P.speed < 0 ? 100 : 62) * (P.turbo > 0 ? 6 : P.burn > 0 ? 3 : 1) * dt); if (P.kit > 0) heal(14 * dt, true); if (P.wRep > 0) heal(2 * dt, true);
     else P.speed -= Math.sign(P.speed) * Math.min(Math.abs(P.speed), 7 * dt);
     if (P.speed > maxSp) P.speed = Math.max(maxSp, P.speed - 80 * dt);
     P.still = Math.abs(P.speed) < 4 && P.dashT <= 0 ? P.still + dt : 0;
+    if (held('dash') && P.dashCd <= 0 && !Object.keys(DASH).some(k => held(k)) && !paused && !modalOn) dashNose();
     P.yaw += turn * (0.9 - 0.35 * Math.min(1, Math.abs(P.speed) / 125)) * (has('F-32') ? 1.4 : 1) * dt; P.bank = lerp(P.bank, -turn * 0.3 * Math.min(1, Math.abs(P.speed) / 40 + 0.3) - (P.dashT > 0 ? Math.sign(P.dvx * Math.cos(P.yaw) - P.dvz * Math.sin(P.yaw)) * 0.5 : 0), 1 - Math.exp(-5 * dt));
     P.x += (Math.sin(P.yaw) * P.speed + P.dvx) * dt; P.z += (Math.cos(P.yaw) * P.speed + P.dvz) * dt; { const f = Math.exp(-5 * dt); P.dvx *= f; P.dvz *= f; } P.hitCd -= dt; P.dashCd = Math.max(0, P.dashCd - dt); P.dashT = Math.max(0, P.dashT - dt);
     { const dv = P.dive > 0; if (dv !== P.wasDive) { P.wasDive = dv; splash(); } P.diveK += ((dv ? 1 : 0) - P.diveK) * (1 - Math.exp(-(dv ? 2.4 : 3.2) * dt)); if (dv) { P.wakeT -= dt; if (P.wakeT <= 0) { P.wakeT = 0.07; smoke.emit({ x: P.x + (rnd() - 0.5) * 10, y: 6, z: P.z + (rnd() - 0.5) * 10, vy: 6, life: 1.8, s0: 20, s1: 56, r: 0.78, g: 0.84, b: 1.0, a: 0.55 }); } } }
