@@ -6,7 +6,8 @@
 let ac = null, master = null, comp = null, noiseBuf = null, verb = null, muteEx = 0, on = true, vol = 0.7;
 let cam = null, lx = 0, lz = 0, live = 0;
 const last = new Map();                 // ключ → время последнего запуска (чтобы не было каши)
-const MAXV = 28;                        // не больше стольких звуков разом
+const MAXV = 40;                        // не больше стольких звуков разом (хвост эха не считается)
+const LOWP = /^(h\d|bolt|ring|warn|coin)/;   // частые мелкие звуки: уступают место голосам мобов, боссов и навыков
 try { const s = localStorage.getItem('sky-sfx'); if (s) { const o = JSON.parse(s); on = o.on !== false; vol = o.vol ?? vol; } } catch (e) {}
 
 function init() { if (ac) return ac; const C = window.AudioContext || window.webkitAudioContext; if (!C) return null;
@@ -41,14 +42,14 @@ function where(x, z) { if (x == null || !cam) return [1, 0]; const d = Math.hypo
   let p = 0; try { const v = { x, y: 36, z }; const e = cam.matrixWorldInverse.elements; const vx = e[0] * v.x + e[4] * v.y + e[8] * v.z + e[12], vz = e[2] * v.x + e[6] * v.y + e[10] * v.z + e[14]; p = Math.max(-1, Math.min(1, vx / Math.max(60, Math.abs(vz)) * 0.9)); } catch (e) {}
   return [k * k * 0.85 + 0.15 * (d < 60 ? 1 : 0), p]; }
 function play(key, layers, o = {}) {
-  if (!on || !ac || ac.state !== 'running' || live >= MAXV) return;
+  if (!on || !ac || ac.state !== 'running' || live >= MAXV || (live >= 24 && LOWP.test(key))) return;
   const now = ac.currentTime, gap = o.gap ?? 0.045, lk = last.get(key) || -1; if (now - lk < gap) return; last.set(key, now);
   const [k, p] = where(o.x, o.z); const v = (o.v ?? 1) * k; if (v < 0.015) return;
   const bus = ac.createGain(); bus.gain.value = v; const pan = ac.createStereoPanner ? ac.createStereoPanner() : null; if (pan) { pan.pan.value = p; bus.connect(pan); pan.connect(master); } else bus.connect(master);
   if (verb) { const sg = ac.createGain(); sg.gain.value = o.rev ?? 0.28; bus.connect(sg); sg.connect(verb); setTimeout(() => { try { sg.disconnect(); } catch (e) {} }, (3.2 + 0.3) * 1000 + 2000); }
   const sh = o.pitch ?? R(0.93, 1.07); let end = 0;
   for (const L of layers) { const q = Object.assign({}, L); if (q.f0) q.f0 *= sh; if (q.f1) q.f1 *= sh; if (q.c0 && !q.n) q.c0 *= sh; if (q.n && q.rate) q.rate *= sh; layer(bus, now + (L.at || 0), q); end = Math.max(end, (L.at || 0) + (L.d || 0.3)); }
-  live++; setTimeout(() => { live--; try { bus.disconnect(); } catch (e) {} }, (end + 2.9) * 1000);
+  live++; setTimeout(() => { live--; }, (end + 0.1) * 1000); setTimeout(() => { try { bus.disconnect(); } catch (e) {} }, (end + 2.9) * 1000);
 }
 
 // ---------- кирпичики ----------
@@ -229,7 +230,7 @@ export const SFX = {
   dash() { play('dash', [...whoosh(300, 2600, 0.45, 0.6), { w: 'sawtooth', f0: 90, f1: 260, d: 0.35, v: 0.15, ft: 'lowpass', c0: 900 }], { v: 0.8 }); },
   // моб стреляет, кусает или кричит (kind: 0 — выстрел, 1 — ближний удар, 2 — крик)
   mob(m, kind = 0, x, z) { const k = mobKey(m); if (!k) return; const b = BOSSV[k]; if (b) { play('b' + k + kind, b[kind === 2 ? 0 : 1](0.95 + hash(k) * 0.1), { x: x ?? m.x, z: z ?? m.z, v: 1, gap: kind === 2 ? 2 : 0.25 }); return; }
-    const [fam, p] = MOBV[k] || ['buzz', 1]; play('m' + k + kind, FAM[fam][Math.min(2, kind)](p), { x: x ?? m.x, z: z ?? m.z, v: kind === 2 ? 0.7 : 0.6, gap: kind === 2 ? 0.8 : 0.09 }); },
+    const [fam, p] = MOBV[k] || ['buzz', 1]; play('m' + k + kind, FAM[fam][Math.min(2, kind)](p), { x: x ?? m.x, z: z ?? m.z, v: kind === 2 ? 1 : 0.9, gap: kind === 2 ? 0.8 : 0.09, rev: 0.3 }); },
   // особые приёмы мобов
   special(sp, x, z) { const L = {
       boom: [{ w: 'square', f0: 880, d: 0.08, v: 0.15 }, { w: 'square', f0: 880, d: 0.08, v: 0.15, at: 0.2 }, { w: 'square', f0: 1200, d: 0.08, v: 0.15, at: 0.35 }],
@@ -249,7 +250,7 @@ export const SFX = {
       tug: [{ w: 'square', f0: 60, d: 0.8, v: 0.15, vib: 18, vd: 10, ft: 'lowpass', c0: 400 }, { n: 1, ft: 'bandpass', c0: 2000, q: 10, d: 0.6, v: 0.15 }],
       slam: [{ w: 'sine', f0: 60, f1: 120, d: 1.2, a: 0.8, v: 0.3 }],
       beam: zap(160, 1.6, 0.4),
-    }[sp]; if (L) play('sp' + sp, L, { x, z, v: 0.7, gap: 0.3 }); },
+    }[sp]; if (L) play('sp' + sp, L, { x, z, v: 1, gap: 0.3, rev: 0.35 }); },
   // попадание по мобу: звук зависит от типа урона (0 кин., 1 взр., 2 пробив., 3 огонь, 4 ток)
   hit(type, crit, x, z, big) { const L = [
       [{ n: 1, ft: 'bandpass', c0: 1800, q: 2, d: 0.08, v: 0.35 }, { w: 'square', f0: 300, f1: 150, d: 0.05, v: 0.12 }],
