@@ -1,16 +1,16 @@
-import { applyModel, loadModel, dropModel, pauseModel } from './models.js?v=202611281430';
-import * as D from './data.js?v=202611281430';
-import { initHangar, dmgTable } from './menu.js?v=202611281430';
-import { COINS } from './coins.js?v=202611281430';
-import { initBuild, waterMat } from './build.js?v=202611281430';
-import { initMission } from './mission.js?v=202611281430';
-import { LOOT } from './loot.js?v=202611281430';
-import * as FX from './fx.js?v=202611281430';
-import { ICONS } from './icons.js?v=202611281430';
-import { NET } from './net.js?v=202611281430';
-import { SFX } from './sfx.js?v=202611281430';
+import { applyModel, loadModel, dropModel, pauseModel } from './models.js?v=202611281540';
+import * as D from './data.js?v=202611281540';
+import { initHangar, dmgTable } from './menu.js?v=202611281540';
+import { COINS } from './coins.js?v=202611281540';
+import { initBuild, waterMat } from './build.js?v=202611281540';
+import { initMission } from './mission.js?v=202611281540';
+import { LOOT } from './loot.js?v=202611281540';
+import * as FX from './fx.js?v=202611281540';
+import { ICONS } from './icons.js?v=202611281540';
+import { NET } from './net.js?v=202611281540';
+import { SFX } from './sfx.js?v=202611281540';
 SFX.setCamera(camera); SFX.names(D);
-import { THREE, scene, camera, renderer, canvas, sunDir, sun, cloud, cloudMat, sky, islands, spires, makeIsland, makeSpire, rng, perlin3, STILL, vortex, CLUMP_G, CLUMP_M, CLUMP_D, ridged3, hemi, ROCK_VARIANTS, ROCKS } from './main.js?v=202611281430';
+import { THREE, scene, camera, renderer, canvas, sunDir, sun, cloud, cloudMat, sky, islands, spires, makeIsland, makeSpire, rng, perlin3, STILL, vortex, CLUMP_G, CLUMP_M, CLUMP_D, ridged3, hemi, ROCK_VARIANTS, ROCKS } from './main.js?v=202611281540';
 
 const PLANE = 36;             // высота, на которой идёт вся игра
 const $ = id => document.getElementById(id);
@@ -1225,7 +1225,13 @@ recompute(true); setShipModel();
 
 let last = performance.now(), frames = 0, fpsT = 0;
 const PROF = { u: 0, r: 0 }; window.__prof = PROF;
-function frame(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; if (window.__freeze) { requestAnimationFrame(frame); return; } if (!window.__pause && (!hangarOpen || (NET.live && NET.inGame)) && !paused && !modalOn) { const t0 = performance.now(); update(dt); const t1 = performance.now(); PROF.u += (t1 - t0 - PROF.u) * 0.05; } { const t1 = performance.now(); render(dt); const t2 = performance.now(); PROF.r += (t2 - t1 - PROF.r) * 0.05; } NET.tick(dt); SFX.listener(P.x, P.z); SFX.tick({ speed: P.speed, max: S.speed || 100, dash: P.dashT > 0, alive: !P.dead && !paused && !modalOn && (!hangarOpen || (NET.live && NET.inGame)), flame: P.flame > 0 && !P.dead }); frames++; fpsT += dt; if (fpsT > 0.5) { $('fps').textContent = Math.round(frames / fpsT) + ' к/с'; frames = 0; fpsT = 0; } window.__frames = (window.__frames || 0) + 1; requestAnimationFrame(frame); }
+// видеокарта: на ноутбуках с двумя картами браузер часто берёт слабую встроенную (Intel, AMD Radeon Graphics) — показываем, на какой идёт игра
+const GPU = (() => { try { const gl = renderer.getContext(), e = gl.getExtension('WEBGL_debug_renderer_info'); return e ? String(gl.getParameter(e.UNMASKED_RENDERER_WEBGL)) : ''; } catch (e) { return ''; } })();
+const GPU_N = (GPU.match(/(GeForce [^(,]+|Quadro [^(,]+|RTX [^(,]+|Radeon[^(,]*|Arc [^(,]+|Intel[^(,]*Graphics[^(,]*|UHD[^(,]*|Iris[^(,]*|Apple [^(,]+)/i) || [''])[0].replace(/\s+/g, ' ').trim();
+const GPU_WEAK = /Intel|UHD|Iris|Radeon\(TM\) Graphics|Radeon Graphics|Microsoft Basic|SwiftShader|llvmpipe/i.test(GPU);
+const GPU_S = GPU_N ? ' · ' + GPU_N : '';
+if (GPU_WEAK) setTimeout(() => log(`Игра идёт на встроенной видеокарте (${GPU_N || GPU}). Если в компьютере есть отдельная (NVIDIA или AMD), включите её для браузера: Параметры Windows → Система → Дисплей → Графика → браузер → «Высокая производительность», затем перезапустите браузер`, '#ffb4a0'), 1500);
+function frame(now) { const dt = Math.min(0.05, (now - last) / 1000); last = now; if (window.__freeze) { requestAnimationFrame(frame); return; } if (!window.__pause && (!hangarOpen || (NET.live && NET.inGame)) && !paused && !modalOn) { const t0 = performance.now(); update(dt); const t1 = performance.now(); PROF.u += (t1 - t0 - PROF.u) * 0.05; } { const t1 = performance.now(); render(dt); const t2 = performance.now(); PROF.r += (t2 - t1 - PROF.r) * 0.05; } NET.tick(dt); SFX.listener(P.x, P.z); SFX.tick({ speed: P.speed, max: S.speed || 100, dash: P.dashT > 0, alive: !P.dead && !paused && !modalOn && (!hangarOpen || (NET.live && NET.inGame)), flame: P.flame > 0 && !P.dead }); frames++; fpsT += dt; if (fpsT > 0.5) { $('fps').textContent = Math.round(frames / fpsT) + ' к/с' + GPU_S; frames = 0; fpsT = 0; } window.__frames = (window.__frames || 0) + 1; requestAnimationFrame(frame); }
 log(`Мобы и боссы пока вас не видят. ${keyName(KEY.menu)}: ангар — корабль, умения, техника, мобы, лавка, клавиши.`);
 if (STILL) { window.__pause = true; window.__g = { info: renderer.info, MIS, makeTreeSpot, makePond, okAll() { let n = 0; while (modalOn && n++ < 20) $('modal-ok').click(); return n; }, get modalOn() { return modalOn; }, warm, interact, trail, fire, smoke, islands, goTo, places, setTier, get tier() { return tier; }, P, S, L, D, KEY, slots: () => slots, mobs, objects, res, shots, zones, attach, FOG, setFog, sleepNow, webs, cloud, sun, scene, keys, use, setShip(id) { L.ship = id; recompute(true); setShipModel(); }, get flames() { return flames.length; }, setQ(n) { q = n; applyQ(); }, useSkill(id) { return useSkill({ id }); }, useDevice(id) { return useDevice({ id }); }, fireWeapon(id) { return fireWeapon({ id }); }, story, get inspect() { return inspect; }, set inspect(m) { inspect = m; inspDirty = true; }, interact, cycleTarget, dash, orbs, addMob, hitMob, damagePlayer, finish, recompute, swapSlot, openHangar, hangar, shop, flood, camera, sim(n, dt = 1 / 30) { for (let i = 0; i < n; i++) update(dt); }, render, cam(y, p, d) { camYaw = y; camPitch = p; camDist = d; first = true; }, get target() { return target; }, set target(m) { target = m; }, get channel() { return channel; }, set see(v) { SEE = v; } }; }
 window.__net = { scene, renderer, camera, cloud, sky, islands, spires, get q() { return q; }, modal: (...a) => modal(...a), get modalCur() { return modalCur; }, NET, P, S, L, mobs, hitMob, spawnMob, useSkill: id => useSkill({ id }), useDevice: id => useDevice({ id }), zonesL: zones, get towing() { return towing; }, get target() { return target; }, objects, MIS, res, shop, get tier() { return tier; }, get modalOn() { return modalOn; }, get paused() { return paused; }, use, interact, finish, damagePlayer, keys, get channel() { return channel; }, zones, FOG };
