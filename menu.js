@@ -1,8 +1,9 @@
 // Меню: подготовка к вылету по шагам (корабль → оружие → способности → спецтехника → команда)
 // и то же меню в полёте по Esc — с вкладками и разделами полигона.
-import { THUMBS } from './thumbs.js?v=202611241652';
-import { COINS } from './coins.js?v=202611241652';
-import { LOOT } from './loot.js?v=202611241652';
+import { THUMBS } from './thumbs.js?v=202611281430';
+import { COINS } from './coins.js?v=202611281430';
+import { LOOT } from './loot.js?v=202611281430';
+import { SFX } from './sfx.js?v=202611281430';
 
 const NAMES = { mission: 'Миссия', lobby: 'Зал ожидания', ship: 'Корабль', weapons: 'Оружие', skills: 'Способности', gear: 'Спецтехника', crew: 'Команда', mobs: 'Мобы и боссы', shop: 'Лавка', catch: 'Улов и древесина', world: 'Острова и породы', keys: 'Управление' };
 const DT = ['Кинетический урон', 'Взрывной урон', 'Пробивной урон', 'Огонь', 'Ток'];
@@ -225,7 +226,7 @@ export function initHangar(api) {
     else if (d.act === 'close') return close();
     draw(); }
   const hit = e => e.target.closest('button') || e.target.closest('[data-ship],[data-spec],[data-pick],[data-choose],[data-mission]');
-  root.addEventListener('click', e => { const el = hit(e); if (el && !el.disabled && root.contains(el)) act(el); });
+  root.addEventListener('click', e => { const el = hit(e); if (el && !el.disabled && root.contains(el)) { SFX.click(); act(el); } });
   root.addEventListener('change', e => { if (e.target.id === 'hg-see') api.see = e.target.checked; });
   root.addEventListener('input', e => { if (e.target.id === 'hg-nick') { L.nick = e.target.value.slice(0, 16); api.apply(false); drawFoot(); if (NET.role) NET.sendMe(); } if (e.target.id === 'hg-code') { joinCode = e.target.value.toUpperCase(); e.target.value = joinCode; } });
   root.addEventListener('keydown', e => { if (e.target.id === 'hg-code' && e.key === 'Enter') { roomJoin(); draw(); } });

@@ -17,6 +17,6 @@
 
 ## Модели и шрифты
 
-3D-модели — бесплатные модели с Sketchfab и Poly Haven под лицензиями CC BY / CC BY-NC / CC0; список авторов — на странице «Все модели игры» (`models.html`). Значки — game-icons.net (CC BY 3.0). Шрифты Prata и Manrope — SIL Open Font License. three.js (MIT) и PeerJS (MIT) лежат в `lib/`.
+3D-модели — бесплатные модели с Sketchfab и Poly Haven под лицензиями CC BY / CC BY-NC / CC0; список авторов — на странице «Все модели игры» (`models.html`). Значки — game-icons.net (CC BY 3.0). Шрифты Playfair Display и Manrope — SIL Open Font License. three.js (MIT) и PeerJS (MIT) лежат в `lib/`.
 
 Игра некоммерческая.

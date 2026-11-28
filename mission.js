@@ -57,8 +57,8 @@ export function initMission(c) {
     const pm = k => new THREE.MeshBasicMaterial({ color: 0xffe2a0, transparent: true, opacity: k, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false, fog: false });
     // зажжённый маяк не светит вверх: его луч ложится в сторону следующего маяка и показывает дорогу. Свет разгоняет туман вокруг башни
     return { g, x, z, lit: false, fl: null, rays: [],
-      light(r = 470, keep = true) { this.lit = true; lamp.material.emissiveIntensity = 9; hl.material.opacity = 0.55; if (!this.fl) this.fl = lightAt(x, z, r, keep); for (const q of this.rays) q.visible = true; return this.fl; },
-      dark() { this.lit = false; lamp.material.emissiveIntensity = 0; hl.material.opacity = 0; unlight(this.fl); this.fl = null; for (const q of this.rays) q.visible = false; },
+      light(r = 470, keep = true) { c.SFX && c.SFX.beacon(x, z); this.lit = true; lamp.material.emissiveIntensity = 9; hl.material.opacity = 0.55; if (!this.fl) this.fl = lightAt(x, z, r, keep); for (const q of this.rays) q.visible = true; return this.fl; },
+      dark() { if (this.lit) c.SFX && c.SFX.beacon(x, z, true); this.lit = false; lamp.material.emissiveIntensity = 0; hl.material.opacity = 0; unlight(this.fl); this.fl = null; for (const q of this.rays) q.visible = false; },
       ray(tx, tz, k = 1) { tx = x + (tx - x) * k; tz = z + (tz - z) * k; const dx = tx - x, dz = tz - z, L = Math.hypot(dx, dz), a = Math.atan2(dx, dz); const beam = new THREE.Mesh(new THREE.CylinderGeometry(9, 1.4, L, 12, 1, true), pm(0.11)); beam.rotation.order = 'YXZ'; beam.rotation.set(Math.PI / 2, a, 0); beam.position.set(x + dx / 2, ly, z + dz / 2);
         const strip = new THREE.Mesh(new THREE.PlaneGeometry(9, L).rotateX(-Math.PI / 2), pm(0.1)); strip.rotation.y = a; strip.position.set(x + dx / 2, PLANE + 2.5, z + dz / 2); strip.renderOrder = 7; for (const q of [beam, strip]) { q.visible = this.lit; g.add(q); this.rays.push(q); } } }; }
   // статуя ангела на своём островке: по ней находят остров, который надо обыскать
@@ -78,13 +78,13 @@ export function initMission(c) {
   function pedestal(x, z, h) { const g = new THREE.Group(), tw = new THREE.Group(); const il = c.islet(x, z, { R: 26, seed: 20 + (pedN++ % 8) }); tw.position.set(x, il.top - 4.5, z); g.add(il.g, tw);
     const p = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 6, 12, 10), BLD.M.rubble); p.position.y = 9; p.castShadow = true; tw.add(p); const top = new THREE.Mesh(new THREE.SphereGeometry(3.6, 14, 10), new THREE.MeshStandardMaterial({ color: 0x33373a, emissive: h, emissiveIntensity: 0.15 })); top.position.y = 18.5; tw.add(top);
     const hl = halo(h, 150); hl.position.y = 19; hl.material.opacity = 0.35; tw.add(hl); let fl = null;
-    return { g, x, z, on() { top.material.emissiveIntensity = 7; hl.material.opacity = 0.9; hl.scale.setScalar(330); if (!fl) fl = lightAt(x, z, 360); }, off() { top.material.emissiveIntensity = 0.15; hl.material.opacity = 0.35; hl.scale.setScalar(150); unlight(fl); fl = null; } }; }
+    return { g, x, z, on() { c.SFX && c.SFX.beacon(x, z); top.material.emissiveIntensity = 7; hl.material.opacity = 0.9; hl.scale.setScalar(330); if (!fl) fl = lightAt(x, z, 360); }, off() { top.material.emissiveIntensity = 0.15; hl.material.opacity = 0.35; hl.scale.setScalar(150); unlight(fl); fl = null; } }; }
   // каменный столб бездны: стоит на пути и время от времени переезжает
   function pillar(i) { const m = new THREE.Mesh(new THREE.CylinderGeometry(20 + (i % 3) * 5, 30 + (i % 2) * 8, 330, 7), c.ROCKS[i % 2 ? 2 : 9][1]); m.rotation.y = i * 1.3; m.castShadow = true; return m; }
   function ringMark(x, z, r, h) { const m = new THREE.Mesh(new THREE.TorusGeometry(r, 1.2, 6, 48), glow(h, 2.2)); m.rotation.x = Math.PI / 2; m.position.set(x, PLANE - 3, z); return m; }
 
   // ---------- салют ----------
-  function firework(x, y, z) { const col = [[4, 2.6, 0.5], [4, 1, 0.6], [1.2, 3, 4], [3.6, 3.6, 3.6], [1, 4, 1.6]][rnd() * 5 | 0];
+  function firework(x, y, z) { c.SFX && c.SFX.firework(x, z); const col = [[4, 2.6, 0.5], [4, 1, 0.6], [1.2, 3, 4], [3.6, 3.6, 3.6], [1, 4, 1.6]][rnd() * 5 | 0];
     for (let i = 0; i < 70; i++) { const a = rnd() * 6.28, e = Math.acos(2 * rnd() - 1), v = 90 + rnd() * 60; c.fire.emit({ x, y, z, vx: Math.sin(e) * Math.cos(a) * v, vy: Math.cos(e) * v, vz: Math.sin(e) * Math.sin(a) * v, life: 1 + rnd() * 0.7, s0: 5, s1: 0.8, r: col[0], g: col[1], b: col[2], a: 1, drag: 1.4 }); }
     c.fire.emit({ x, y, z, life: 0.25, s0: 30, s1: 90, r: 4, g: 3.4, b: 2, a: 0.6 }); }
 
@@ -299,7 +299,7 @@ export function initMission(c) {
     M.stages = DEF[id](); P.x = 0; P.z = 0; P.speed = 0; P.hp = S.hp; c.snap(); $('help').style.display = 'none'; $('toast').style.display = 'none'; $('mis').style.display = 'block'; enter(0); }
   function end(quiet) { if (!M) return; const mir = M.mirror; clearStage(); unhold(); M = null; lost0(); P.rooted = 0; c.setTierLook(null); c.setFog(0); c.fogLights.length = 0; c.setWorld(null); $('mis').style.display = 'none'; $('fin').style.display = 'none'; $('fin-name').style.display = 'none'; $('help').style.display = ''; c.setSee(false); c.openShop(false); if (c.tier() !== 0) c.setTier(0); if (!quiet && !mir) { c.clearMobs(); c.spawnStart(); } }
   function finish() { clearStage(); c.setFog(0); lost0(); c.setSee(false); $('mis').style.display = 'none'; M.fin = { names: c.nicks(), i: -1, t: 0, fw: 0 }; if (c.bcast) c.bcast('fin', { id: M.id, names: M.fin.names, t: M.t, kills: M.kills, deaths: M.deaths }); }
-  function results() { const mm = Math.floor(M.t / 60), ss = String(Math.floor(M.t % 60)).padStart(2, '0'); M.fin.done = true; $('fin-name').style.display = 'none';
+  function results() { c.SFX && c.SFX.fanfare(); const mm = Math.floor(M.t / 60), ss = String(Math.floor(M.t % 60)).padStart(2, '0'); M.fin.done = true; $('fin-name').style.display = 'none';
     $('fin-body').innerHTML = `<p class="kick">Миссия пройдена</p><h2>${M.def.name}</h2><dl><div><dt>Время</dt><dd>${mm}:${ss}</dd></div><div><dt>Сбито врагов</dt><dd>${M.kills}</dd></div><div><dt>Золото</dt><dd>${c.fmt(res.gold)}</dd></div><div><dt>Потеряно кораблей</dt><dd>${M.deaths}</dd></div></dl>`; $('fin').style.display = 'flex'; $('fin-menu').focus(); }
   function tick(dt) { if (!M) return;
     if (M.fin) { const f = M.fin; if (f.done) return; f.t -= dt; f.fw -= dt; if (f.fw <= 0) { f.fw = 0.7; const a = rnd() * 6.28, d = 120 + rnd() * 240; firework(P.x + Math.cos(a) * d, PLANE + 60 + rnd() * 150, P.z + Math.sin(a) * d); }
